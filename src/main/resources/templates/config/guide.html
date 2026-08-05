@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('配置指南 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <h4>配置修改指南</h4>
+            <div class="card">
+                <div class="card-body">
+                    <h6>字段说明</h6>
+                    <table class="table table-sm">
+                        <thead>
+                            <tr><th>字段</th><th>必填</th><th>说明</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>项目名称</td><td>是</td><td>唯一标识项目的名称</td></tr>
+                            <tr><td>版本号</td><td>是</td><td>当前部署的版本号</td></tr>
+                            <tr><td>Git 仓库地址</td><td>是</td><td>代码仓库的 HTTPS 或 SSH 地址</td></tr>
+                            <tr><td>代码分支</td><td>否</td><td>默认 main</td></tr>
+                            <tr><td>Git 认证环境变量名</td><td>否</td><td>存放 Git Token 的环境变量名，系统运行时从环境变量读取实际值</td></tr>
+                            <tr><td>构建指令</td><td>是</td><td>编译项目的命令，如 mvn clean package</td></tr>
+                            <tr><td>构建工作目录</td><td>否</td><td>执行构建指令的工作目录</td></tr>
+                            <tr><td>语言类型</td><td>否</td><td>JAVA/GO/NODE/PYTHON，用于版本管理</td></tr>
+                            <tr><td>语言版本</td><td>否</td><td>对应语言的版本号</td></tr>
+                            <tr><td>自定义安装目录</td><td>否</td><td>语言环境的自定义安装路径，留空使用默认</td></tr>
+                            <tr><td>部署服务器地址</td><td>是</td><td>目标服务器 IP 或域名</td></tr>
+                            <tr><td>SSH 端口</td><td>否</td><td>默认 22</td></tr>
+                            <tr><td>用户名</td><td>否</td><td>SSH 登录用户名</td></tr>
+                            <tr><td>认证环境变量名</td><td>否</td><td>存放 SSH 密码/密钥的环境变量名</td></tr>
+                            <tr><td>部署目标路径</td><td>是</td><td>构建产物在服务器上的部署位置</td></tr>
+                            <tr><td>启动命令</td><td>否</td><td>首次部署时的启动命令</td></tr>
+                            <tr><td>重启命令</td><td>否</td><td>更新部署时的重启命令</td></tr>
+                        </tbody>
+                    </table>
+                    <h6 class="mt-4">注意事项</h6>
+                    <ul>
+                        <li>所有认证信息（密码、Token）禁止明文存储，通过环境变量引用</li>
+                        <li>配置修改后即时生效，无需重启系统</li>
+                        <li>正在进行的构建任务使用修改前的配置，不受影响</li>
+                        <li>字段校验失败时拒绝保存，需修正后重新提交</li>
+                        <li>也可通过 HTTP 接口修改配置: POST /api/configs (JSON)</li>
+                    </ul>
+                </div>
+            </div>
+            <a th:href="@{/config}" class="btn btn-secondary mt-3">返回列表</a>
+        </div>
+    </div>
+</div>
+<th:block th:replace="fragments/common :: scripts"></th:block>
+</body>
+</html>

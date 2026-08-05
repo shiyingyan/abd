@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('系统设置 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <h4>系统设置</h4>
+            <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
+            <div th:if="${success}" class="alert alert-success" th:text="${success}"></div>
+
+            <!-- Concurrency -->
+            <div class="card mb-3">
+                <div class="card-header">构建并发配置</div>
+                <div class="card-body">
+                    <form th:action="@{/settings/concurrent}" method="post" class="row g-2 align-items-end">
+                        <div class="col-auto">
+                            <label class="form-label">最大并发数 (1-20)</label>
+                            <input type="number" class="form-control" name="maxConcurrent"
+                                   min="1" max="20" th:value="${maxConcurrent}" style="width:100px"/>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Retention -->
+            <div class="card mb-3">
+                <div class="card-header">保留策略</div>
+                <div class="card-body">
+                    <form th:action="@{/settings/retention}" method="post" class="row g-2 align-items-end">
+                        <div class="col-auto">
+                            <label class="form-label">日志保留天数</label>
+                            <input type="number" class="form-control" name="logRetentionDays"
+                                   min="1" th:value="${logRetentionDays}" style="width:100px"/>
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label">历史保留天数</label>
+                            <input type="number" class="form-control" name="historyRetentionDays"
+                                   min="1" th:value="${historyRetentionDays}" style="width:100px"/>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Build Server -->
+            <div class="card mb-3">
+                <div class="card-header">构建服务器配置</div>
+                <div class="card-body">
+                    <form th:action="@{/settings/build-server}" method="post">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label">服务器地址</label>
+                                <input type="text" class="form-control" name="host" th:value="${buildServerHost}"/>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">端口</label>
+                                <input type="number" class="form-control" name="port" th:value="${buildServerPort}" style="width:80px"/>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">用户名</label>
+                                <input type="text" class="form-control" name="user" th:value="${buildServerUser}"/>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">认证环境变量名</label>
+                                <input type="text" class="form-control" name="authEnvKey" th:value="${buildServerAuthEnv}"/>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <button type="submit" class="btn btn-primary btn-sm">保存</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="testConnBtn">测试连接</button>
+                        </div>
+                    </form>
+                    <div id="testResult" class="mt-2"></div>
+                </div>
+            </div>
+
+            <!-- Env Vars -->
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    环境变量管理
+                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addEnvVarModal">添加</button>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <thead><tr><th>变量名</th><th>描述</th><th>状态</th><th>操作</th></tr></thead>
+                        <tbody>
+                            <tr th:each="ref : ${envVarRefs}">
+                                <td th:text="${ref.varKey}"></td>
+                                <td th:text="${ref.description}"></td>
+                                <td>
+                                    <span th:each="status : ${envVarStatuses}"
+                                          th:if="${status.key == ref.varKey}"
+                                          th:text="${status.set ? '已设置' : '未设置'}"
+                                          th:class="${status.set ? 'badge bg-success' : 'badge bg-warning'}"></span>
+                                </td>
+                                <td><a th:href="@{/settings/env-var/delete/{id}(id=${ref.id})}" class="btn btn-sm btn-outline-danger">删除</a></td>
+                            </tr>
+                            <tr th:if="${envVarRefs.isEmpty()}"><td colspan="4" class="text-center text-muted">暂无环境变量</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Env Var Modal -->
+<div class="modal fade" id="addEnvVarModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form th:action="@{/settings/env-var}" method="post">
+                <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>添加环境变量引用</h5></div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">环境变量名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="varKey" list="envVarList" required
+                               placeholder="从系统环境变量中选择或输入搜索..."/>
+                        <datalist id="envVarList">
+                            <!-- Populated dynamically via JS -->
+                        </datalist>
+                        <div class="form-text">从系统环境变量中选择，或输入名称进行搜索筛选</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">描述</label>
+                        <input type="text" class="form-control" name="description" placeholder="可选"/>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<th:block th:replace="fragments/common :: scripts"></th:block>
+<script>
+$('#testConnBtn').click(function() {
+    $.post('/api/settings/test-build-server', function(data) {
+        var html = data.success
+            ? '<span class="text-success">连接成功</span>'
+            : '<span class="text-danger">' + data.message + '</span>';
+        $('#testResult').html(html);
+    });
+});
+
+// Populate env var datalist when modal opens
+$('#addEnvVarModal').on('show.bs.modal', function() {
+    var datalist = $('#envVarList');
+    datalist.empty();
+    datalist.html('<option value="">加载中...</option>');
+    $.get('/api/settings/env-vars', function(vars) {
+        datalist.empty();
+        vars.forEach(function(v) {
+            datalist.append('<option value="' + v + '"></option>');
+        });
+    }).fail(function() {
+        datalist.html('<option value="加载失败">加载失败</option>');
+    });
+});
+</script>
+</body>
+</html>

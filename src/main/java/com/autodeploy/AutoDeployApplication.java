@@ -1,0 +1,18 @@
+package com.autodeploy;
+
+import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+@SpringBootApplication
+@MapperScan("com.autodeploy.repository")
+@EnableScheduling
+@EnableTransactionManagement(proxyTargetClass = true)
+public class AutoDeployApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(AutoDeployApplication.class, args);
+    }
+}

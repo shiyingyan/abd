@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('编辑配置 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <h4 th:text="${isNew} ? '新建项目配置' : '编辑项目配置'">编辑配置</h4>
+            <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
+            <form th:action="@{/config/save}" th:object="${config}" method="post">
+                <input type="hidden" th:field="*{id}"/>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">项目名称 *</label>
+                        <input type="text" class="form-control" th:field="*{projectName}" required/>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">版本号 *</label>
+                        <input type="text" class="form-control" th:field="*{version}" required/>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">代码分支</label>
+                        <input type="text" class="form-control" th:field="*{gitBranch}" value="main"/>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Git 仓库地址 *</label>
+                    <input type="text" class="form-control" th:field="*{gitRepoUrl}" required
+                           placeholder="https://github.com/user/repo.git"/>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Git 认证环境变量名</label>
+                    <input type="text" class="form-control" th:field="*{gitAuthEnvKey}"
+                           placeholder="如 GIT_TOKEN，系统从环境变量读取实际值"/>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">项目目录</label>
+                    <input type="text" class="form-control" th:field="*{projectDir}"
+                           placeholder="留空使用默认临时目录"/>
+                    <div class="form-text">
+                        指定项目代码的存放目录。留空时，系统为每个用户自动分配独立的临时目录（同一用户目录保持不变）；指定后，所有用户共用该目录。
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-8 mb-3">
+                        <label class="form-label">构建指令 *</label>
+                        <input type="text" class="form-control" th:field="*{buildCommand}" required
+                               placeholder="如 mvn clean package -DskipTests"/>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">构建工作目录
+                            <i class="bi bi-question-circle ad-help-icon" data-bs-toggle="tooltip" data-bs-placement="right"
+                               title="相对于项目根目录的路径，例如 src/main。留空则使用项目根目录。"></i>
+                        </label>
+                        <input type="text" class="form-control" th:field="*{buildWorkDir}"
+                               placeholder="如 src/main"/>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">语言类型</label>
+                        <select class="form-select" th:field="*{languageType}">
+                            <option value="">--</option>
+                            <option value="JAVA">Java</option>
+                            <option value="GO">Go</option>
+                            <option value="NODE">Node</option>
+                            <option value="PYTHON">Python</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">语言版本</label>
+                        <select class="form-select" id="languageVersionSelect" name="languageVersion">
+                            <option value="">请先选择语言类型</option>
+                        </select>
+                        <div id="noVersionsMsg" class="form-text text-warning d-none">
+                            未安装任何版本。<a th:href="@{/runtime}">前往语言环境管理</a> 安装版本。
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">自定义安装目录</label>
+                        <input type="text" class="form-control" th:field="*{customInstallDir}"
+                               placeholder="可选，留空使用默认路径"/>
+                    </div>
+                </div>
+                <hr/>
+                <h6>部署服务器配置</h6>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label">服务器地址 *</label>
+                        <input type="text" class="form-control" th:field="*{deployServerHost}" required/>
+                    </div>
+                    <div class="col-md-2 mb-3">
+                        <label class="form-label">SSH 端口</label>
+                        <input type="number" class="form-control" th:field="*{deployServerPort}" value="22"/>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">用户名</label>
+                        <input type="text" class="form-control" th:field="*{deployServerUser}"/>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">认证环境变量名</label>
+                        <input type="text" class="form-control" th:field="*{deployAuthEnvKey}"
+                               placeholder="如 DEPLOY_SSH_PASSWORD"/>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="testDeployConnBtn">
+                        <i class="bi bi-plug me-1"></i>测试连接
+                    </button>
+                    <span id="testDeployResult" class="ms-2"></span>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">部署目标路径 *</label>
+                    <input type="text" class="form-control" th:field="*{deployTargetPath}" required
+                           placeholder="/opt/apps/myapp/"/>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">启动命令
+                            <small class="text-muted">（可选）</small>
+                        </label>
+                        <input type="text" class="form-control" th:field="*{startCommand}"
+                               placeholder="留空表示不需要启动"/>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">重启命令
+                            <small class="text-muted">（可选）</small>
+                        </label>
+                        <input type="text" class="form-control" th:field="*{restartCommand}"
+                               placeholder="留空表示不需要重启"/>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                    <a th:href="@{/config}" class="btn btn-secondary">取消</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<th:block th:replace="fragments/common :: scripts"></th:block>
+<script th:inline="javascript">
+    var currentLanguageVersion = /*[[${config.languageVersion}]]*/ '';
+
+    // Test deploy server connection
+    $('#testDeployConnBtn').click(function() {
+        var btn = $(this);
+        var resultSpan = $('#testDeployResult');
+        var host = $('[name="deployServerHost"]').val();
+        var port = $('[name="deployServerPort"]').val() || 22;
+        var user = $('[name="deployServerUser"]').val();
+        var authEnvKey = $('[name="deployAuthEnvKey"]').val();
+        if (!host) {
+            resultSpan.html('<span class="text-danger">请先填写服务器地址</span>');
+            return;
+        }
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>测试中...');
+        resultSpan.html('');
+        $.post('/api/config/test-deploy-server', {
+            host: host, port: port, user: user, authEnvKey: authEnvKey
+        }, function(data) {
+            if (data.success) {
+                resultSpan.html('<span class="text-success"><i class="bi bi-check-circle me-1"></i>' + data.message + '</span>');
+            } else {
+                resultSpan.html('<span class="text-danger"><i class="bi bi-x-circle me-1"></i>' + data.message + '</span>');
+            }
+        }).fail(function() {
+            resultSpan.html('<span class="text-danger">请求失败</span>');
+        }).always(function() {
+            btn.prop('disabled', false).html('<i class="bi bi-plug me-1"></i>测试连接');
+        });
+    });
+
+    function loadVersions(langType) {
+        var select = document.getElementById('languageVersionSelect');
+        var noVersionsMsg = document.getElementById('noVersionsMsg');
+        select.innerHTML = '<option value="">加载中...</option>';
+        noVersionsMsg.classList.add('d-none');
+
+        if (!langType) {
+            select.innerHTML = '<option value="">请先选择语言类型</option>';
+            return;
+        }
+
+        $.get('/api/runtime/versions', {language: langType}, function(versions) {
+            select.innerHTML = '';
+            if (!versions || versions.length === 0) {
+                select.innerHTML = '<option value="">无可用版本</option>';
+                noVersionsMsg.classList.remove('d-none');
+                return;
+            }
+            select.innerHTML = '<option value="">-- 选择版本 --</option>';
+            versions.forEach(function(v) {
+                var opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                if (currentLanguageVersion && v.trim() === currentLanguageVersion.trim()) {
+                    opt.selected = true;
+                }
+                select.appendChild(opt);
+            });
+        }).fail(function() {
+            select.innerHTML = '<option value="">加载失败</option>';
+        });
+    }
+
+    $(document).ready(function() {
+        var langSelect = document.querySelector('[name="languageType"]');
+        langSelect.addEventListener('change', function() {
+            loadVersions(this.value);
+        });
+        // Load versions on page load if language type is already selected
+        if (langSelect.value) {
+            loadVersions(langSelect.value);
+        }
+    });
+</script>
+</body>
+</html>

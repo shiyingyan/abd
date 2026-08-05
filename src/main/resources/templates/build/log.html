@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('构建日志 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <h4>
+                构建日志 -
+                <span th:if="${!isActive}" th:text="${task.configSnapshot.projectName}"></span>
+                <span th:if="${!isActive}" class="badge bg-info" th:text="${task.status.label}"></span>
+                <span th:if="${!isActive and taskId!=null and taskId.length()>0}" th:text="${taskId}"></span>
+            </h4>
+            <a th:href="@{/build}" class="btn btn-secondary btn-sm mb-2">返回</a>
+            <pre class="bg-dark text-light p-3" id="logArea" style="max-height:600px;overflow-y:auto;border-radius:0.5rem;white-space:pre-wrap;word-wrap:break-word;"></pre>
+        </div>
+    </div>
+</div>
+<th:block th:replace="fragments/common :: scripts"></th:block>
+<script th:if="${isActive and taskId!=null and taskId.length()>0 }">
+    // Active task: replay buffered logs via SSE, then stream live
+    var taskId = '[[${task.taskId}]]';
+    var logArea = document.getElementById('logArea');
+    var evtSource = new EventSource('/api/build/sse/' + taskId);
+    evtSource.onmessage = function(e) {
+        logArea.innerHTML += e.data + '\n';
+        logArea.scrollTop = logArea.scrollHeight;
+    };
+    evtSource.onerror = function() { evtSource.close(); };
+</script>
+<script th:if="${!isActive and taskId!=null and taskId.length()>0}">
+    // Completed/evicted task: load log from file
+    var logArea = document.getElementById('logArea');
+    logArea.textContent = '正在加载日志...';
+    fetch('/api/build/log-content/[[${taskId}]]')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                logArea.textContent = data.content;
+            } else {
+                logArea.textContent = data.content;
+            }
+            logArea.scrollTop = logArea.scrollHeight;
+        })
+        .catch(function() {
+            logArea.textContent = '加载日志失败';
+        });
+</script>
+</body>
+</html>

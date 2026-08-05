@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('构建管理 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <h4>构建管理</h4>
+            <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
+
+            <!-- Start build form -->
+            <div class="card mb-3">
+                <div class="card-header">发起构建</div>
+                <div class="card-body">
+                    <form th:action="@{/build/start}" method="post" class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">选择项目</label>
+                            <select name="configId" class="form-select" required>
+                                <option value="">--选择--</option>
+                                <option th:each="c : ${configs}" th:value="${c.id}" th:text="${c.projectName + ' v' + c.version}"></option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">构建模式</label>
+                            <select name="buildMode" class="form-select">
+                                <option value="LOCAL">本机构建</option>
+                                <option value="REMOTE">远程构建服务器</option>
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-primary">开始构建</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Active tasks -->
+            <div class="card">
+                <div class="card-header">构建任务</div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <thead><tr><th>任务ID</th><th>项目</th><th>状态</th><th>模式</th><th>用户</th><th>开始时间</th><th>操作</th></tr></thead>
+                        <tbody>
+                            <tr th:each="task : ${tasks}">
+                                <td th:text="${task.taskId}"></td>
+                                <td th:text="${task.configSnapshot.projectName}"></td>
+                                <td><span class="badge bg-info" th:text="${task.status.label}"></span></td>
+                                <td th:text="${task.buildMode}"></td>
+                                <td th:text="${task.currentUser}"></td>
+                                <td th:text="${task.startTime}"></td>
+                                <td><a th:href="@{/build/log/{id}(id=${task.taskId})}" class="btn btn-sm btn-outline-primary">查看日志</a></td>
+                            </tr>
+                            <tr th:if="${tasks.isEmpty()}"><td colspan="7" class="text-center text-muted">暂无构建任务</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<th:block th:replace="fragments/common :: scripts"></th:block>
+</body>
+</html>

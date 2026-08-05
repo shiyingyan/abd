@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('构建历史 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <h4>构建历史</h4>
+
+            <!-- Query form -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <form method="get" th:action="@{/history}" class="row g-2 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label">项目名称</label>
+                            <input type="text" class="form-control" name="projectName" th:value="${projectName}"/>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">状态</label>
+                            <select class="form-select" name="status">
+                                <option value="">全部</option>
+                                <option value="SUCCESS" th:selected="${status == 'SUCCESS'}">成功</option>
+                                <option value="FAIL" th:selected="${status == 'FAIL'}">失败</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">开始日期</label>
+                            <input type="date" class="form-control" name="dateFrom" th:value="${dateFrom != null ? #temporals.format(dateFrom, 'yyyy-MM-dd') : ''}"/>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">结束日期</label>
+                            <input type="date" class="form-control" name="dateTo" th:value="${dateTo != null ? #temporals.format(dateTo, 'yyyy-MM-dd') : ''}"/>
+                        </div>
+                        <div class="col-auto"><button type="submit" class="btn btn-primary">查询</button></div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Records -->
+            <div class="card">
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <thead><tr><th>ID</th><th>项目</th><th>版本</th><th>仓库</th><th>构建时间</th><th>用户</th><th>状态</th><th>模式</th><th>部署</th><th>操作</th></tr></thead>
+                        <tbody>
+                            <tr th:each="r : ${records}">
+                                <td th:text="${r.id}"></td>
+                                <td th:text="${r.projectName}"></td>
+                                <td th:text="${r.version}"></td>
+                                <td th:text="${r.repoUrl}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;"></td>
+                                <td th:text="${r.buildTime}"></td>
+                                <td th:text="${r.buildUser}"></td>
+                                <td>
+                                    <span class="badge" th:classappend="${r.status == 'SUCCESS' ? 'bg-success' : 'bg-danger'}" th:text="${r.status}"></span>
+                                </td>
+                                <td th:text="${r.buildMode}"></td>
+                                <td>
+                                    <span class="badge" th:classappend="${r.deployStatus == 'SUCCESS' ? 'bg-success' : (r.deployStatus == 'FAIL' ? 'bg-danger' : 'bg-warning')}" th:text="${r.deployStatus}"></span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info" th:onclick="'showDetail(' + ${r.id} + ')'">详情</button>
+                                    <button class="btn btn-sm btn-outline-secondary" th:onclick="'showLog(' + ${r.id} + ')'">日志</button>
+                                </td>
+                            </tr>
+                            <tr th:if="${records.isEmpty()}"><td colspan="10" class="text-center text-muted">暂无构建记录</td></tr>
+                        </tbody>
+                    </table>
+                    <!-- Pagination -->
+                    <nav th:if="${totalPages > 1}">
+                        <ul class="pagination">
+                            <li class="page-item" th:classappend="${currentPage == 1 ? 'disabled' : ''}">
+                                <a class="page-link" th:href="@{/history(page=${currentPage - 1}, projectName=${projectName}, status=${status})}">上一页</a>
+                            </li>
+                            <li class="page-item active"><span class="page-link" th:text="${currentPage + ' / ' + totalPages}"></span></li>
+                            <li class="page-item" th:classappend="${currentPage == totalPages ? 'disabled' : ''}">
+                                <a class="page-link" th:href="@{/history(page=${currentPage + 1}, projectName=${projectName}, status=${status})}">下一页</a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">构建详情</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body" id="detailContent"></div>
+    </div></div>
+</div>
+
+<!-- Log Modal -->
+<div class="modal fade" id="logModal" tabindex="-1">
+    <div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">构建日志</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><pre class="bg-dark text-light p-3" id="logContent" style="max-height:500px;overflow-y:auto;"></pre></div>
+    </div></div>
+</div>
+
+<th:block th:replace="fragments/common :: scripts"></th:block>
+<script>
+function showDetail(id) {
+    $.get('/history/detail/' + id, function(data) {
+        var html = '<table class="table table-sm">';
+        for (var key in data) {
+            html += '<tr><td><b>' + key + '</b></td><td>' + data[key] + '</td></tr>';
+        }
+        html += '</table>';
+        $('#detailContent').html(html);
+        new bootstrap.Modal($('#detailModal')).show();
+    });
+}
+function showLog(id) {
+    $.get('/history/log/' + id, function(data) {
+        $('#logContent').text(data.content);
+        new bootstrap.Modal($('#logModal')).show();
+    });
+}
+</script>
+</body>
+</html>

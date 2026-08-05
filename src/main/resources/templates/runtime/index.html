@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('语言环境 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <h4>语言运行时管理</h4>
+            <div class="row">
+                <div class="col-12 mb-3" th:each="lang : ${languages}">
+                    <div class="card ad-card-hover" th:id="${lang.name + '-card'}">
+                        <div class="card-body" style="word-break: break-all; overflow-wrap: break-word;">
+                            <h6><i class="bi bi-code-square me-1"></i> <span th:text="${lang}"></span>
+                                <small class="text-muted" th:text="'(' + ${lang.toolName} + ')'"></small>
+                            </h6>
+                            <div th:id="${lang.name + '-versions'}" class="mb-2">
+                                <span class="text-muted small">加载中...</span>
+                            </div>
+                            <hr/>
+                            <label class="form-label small">检查/安装指定版本</label>
+                            <div class="input-group input-group-sm mb-2">
+                                <input type="text" class="form-control version-input" th:id="${lang.name + '-version'}"
+                                       placeholder="版本号" th:data-lang="${lang.name}"/>
+                                <button class="btn btn-outline-primary btn-sm check-btn" th:data-lang="${lang.name}">
+                                    <i class="bi bi-search"></i> 检查
+                                </button>
+                            </div>
+                            <button class="btn btn-sm btn-primary install-btn d-none" th:data-lang="${lang.name}">
+                                <i class="bi bi-download me-1"></i>安装
+                            </button>
+                            <div th:id="${lang.name + '-status'}" class="small mt-1"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="installLog" class="mt-3" style="display:none;">
+                <h6><i class="bi bi-terminal me-1"></i>安装日志</h6>
+                <pre class="bg-dark text-light p-3" style="max-height:300px;overflow-y:auto;border-radius:0.5rem;" id="logArea"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+<th:block th:replace="fragments/common :: scripts"></th:block>
+<script>
+// Load installed versions on page load
+$(document).ready(function() {
+    var langs = ['JAVA', 'GO', 'NODE', 'PYTHON'];
+    langs.forEach(function(lang) {
+        $.get('/api/runtime/versions', {language: lang}, function(versions) {
+            var container = $('#' + lang + '-versions');
+            var card = $('#' + lang + '-card');
+            if (!versions || versions.length === 0) {
+                container.html('<div class="alert alert-warning py-1 px-2 mb-0 small">' +
+                    '<i class="bi bi-exclamation-triangle me-1"></i>' +
+                    '未安装任何版本。请先在系统中安装。</div>');
+                card.addClass('border-warning');
+            } else {
+                var badges = versions.map(function(v) {
+                    return '<span class="badge bg-success me-1 mb-1">' + v.trim() + '</span>';
+                }).join('');
+                container.html('<div class="small text-muted mb-1">已安装版本：</div>' + badges);
+                card.removeClass('border-warning');
+            }
+        }).fail(function() {
+            $('#' + lang + '-versions').html('<span class="text-danger small">检测失败</span>');
+        });
+    });
+});
+
+$('.check-btn').click(function() {
+    var lang = $(this).data('lang');
+    var version = $('#' + lang + '-version').val();
+    if (!version) return;
+    $.get('/api/runtime/installed', {language: lang, version: version}, function(data) {
+        var status = $('#' + lang + '-status');
+        if (data.installed) {
+            status.html('<span class="text-success"><i class="bi bi-check-circle me-1"></i>已安装</span>');
+            $('.install-btn[data-lang="' + lang + '"]').addClass('d-none');
+        } else {
+            status.html('<span class="text-warning"><i class="bi bi-exclamation-circle me-1"></i>未安装</span>');
+            var btn = $('.install-btn[data-lang="' + lang + '"]');
+            btn.removeClass('d-none').data('version', version);
+        }
+    });
+});
+
+$('.install-btn').click(function() {
+    var lang = $(this).data('lang');
+    var version = $('#' + lang + '-version').val();
+    if (!version) return;
+    $('#installLog').show();
+    $('#logArea').html('');
+    var installBtn = $(this);
+    var evtSource = new EventSource('/api/runtime/install?language=' + lang + '&version=' + version);
+    evtSource.onmessage = function(e) {
+        $('#logArea').append(e.data + '\n');
+        $('#logArea').scrollTop($('#logArea')[0].scrollHeight);
+    };
+    evtSource.onerror = function() {
+        evtSource.close();
+        // Refresh installed versions list after install completes
+        loadVersions(lang);
+        // Update status for the installed version
+        $.get('/api/runtime/installed', {language: lang, version: version}, function(data) {
+            var status = $('#' + lang + '-status');
+            if (data.installed) {
+                status.html('<span class="text-success"><i class="bi bi-check-circle me-1"></i>安装完成，已安装</span>');
+                installBtn.addClass('d-none');
+            } else {
+                status.html('<span class="text-danger"><i class="bi bi-x-circle me-1"></i>安装完成，但未检测到该版本</span>');
+            }
+        });
+    };
+});
+</script>
+</body>
+</html>

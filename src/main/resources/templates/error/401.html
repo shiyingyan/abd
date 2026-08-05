@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"/>
+    <title>401 - 未授权</title>
+    <link rel="stylesheet" th:href="@{/static/vendor/bootstrap/bootstrap.min.css}"/>
+    <link rel="stylesheet" th:href="@{/static/vendor/bootstrap-icons/bootstrap-icons.css}"/>
+    <link rel="stylesheet" th:href="@{/static/css/app.css}"/>
+</head>
+<body class="bg-light d-flex align-items-center justify-content-center" style="min-height:100vh;">
+    <div class="text-center">
+        <i class="bi bi-shield-lock text-danger" style="font-size:5rem;"></i>
+        <h1 class="display-1 fw-bold text-danger mt-3">401</h1>
+        <p class="lead text-muted">未授权，请先登录</p>
+        <a href="/login" class="btn btn-primary mt-3"><i class="bi bi-box-arrow-in-right me-2"></i>去登录</a>
+    </div>
+</body>
+</html>

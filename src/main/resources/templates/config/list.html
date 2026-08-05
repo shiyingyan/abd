@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('项目配置 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4>项目配置</h4>
+                <div>
+                    <a th:href="@{/config/new}" class="btn btn-primary btn-sm">新建配置</a>
+                    <a th:href="@{/config/guide}" class="btn btn-outline-secondary btn-sm">配置指南</a>
+                </div>
+            </div>
+            <div th:if="${configs != null and !configs.isEmpty()}">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>项目名称</th>
+                            <th>版本号</th>
+                            <th>Git 仓库</th>
+                            <th>分支</th>
+                            <th>语言</th>
+                            <th>部署服务器</th>
+                            <th>更新时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr th:each="config : ${configs}">
+                            <td th:text="${config.id}"></td>
+                            <td th:text="${config.projectName}"></td>
+                            <td th:text="${config.version}"></td>
+                            <td th:text="${config.gitRepoUrl}"></td>
+                            <td th:text="${config.gitBranch}"></td>
+                            <td>
+                                <span th:if="${config.languageType != null}" th:text="${config.languageType + ' ' + config.languageVersion}"></span>
+                            </td>
+                            <td th:text="${config.deployServerHost}"></td>
+                            <td th:text="${config.updatedAt}"></td>
+                            <td>
+                                <a th:href="@{/config/edit/{id}(id=${config.id})}" class="btn btn-sm btn-outline-primary">编辑</a>
+                                <a th:href="@{/config/delete/{id}(id=${config.id})}" class="btn btn-sm btn-outline-danger"
+                                   onclick="return confirm('确认删除?')">删除</a>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div th:if="${configs == null or configs.isEmpty()}" class="text-center text-muted py-5">
+                <p>暂无项目配置，请点击"新建配置"创建</p>
+            </div>
+        </div>
+    </div>
+</div>
+<th:block th:replace="fragments/common :: scripts"></th:block>
+</body>
+</html>

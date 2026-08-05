@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"/>
+    <title>登录 - Auto Deploy</title>
+    <link rel="stylesheet" th:href="@{/static/vendor/bootstrap/bootstrap.min.css}"/>
+    <link rel="stylesheet" th:href="@{/static/vendor/bootstrap-icons/bootstrap-icons.css}"/>
+    <link rel="stylesheet" th:href="@{/static/css/app.css}"/>
+</head>
+<body class="bg-light">
+    <div class="container">
+        <div class="row justify-content-center mt-5">
+            <div class="col-md-4">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h3 class="text-center mb-4">Auto Deploy</h3>
+                        <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
+                        <div th:if="${success}" class="alert alert-success" th:text="${success}"></div>
+                        <form id="loginForm" method="post" th:action="@{/login}">
+                            <div class="mb-3">
+                                <label class="form-label">用户名</label>
+                                <input type="text" class="form-control" name="username"
+                                       th:value="${username}" required="required"
+                                       placeholder="请输入用户名"/>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">密码</label>
+                                <input type="password" class="form-control" id="rawPassword"
+                                       required="required" placeholder="请输入密码"/>
+                                <input type="hidden" id="password" name="password"/>
+                            </div>
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary" id="submitBtn">登录</button>
+                            </div>
+                        </form>
+                        <div class="text-center mt-3">
+                            <a th:href="@{/register}">注册新账号</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script th:src="@{/static/vendor/jquery/jquery.min.js}"></script>
+    <script th:src="@{/static/vendor/bootstrap/bootstrap.bundle.min.js}"></script>
+    <script th:src="@{/static/js/app.js}"></script>
+    <script>
+        $('#loginForm').on('submit', async function(e) {
+            e.preventDefault();
+            var rawPwd = $('#rawPassword').val();
+            if (!rawPwd) return;
+            var hashed = await sha256(rawPwd);
+            $('#password').val(hashed);
+            this.submit();
+        });
+    </script>
+</body>
+</html>
