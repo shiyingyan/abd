@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS project_config (
     deploy_server_user VARCHAR(64),
     deploy_auth_env_key VARCHAR(128),
     deploy_target_path VARCHAR(512) NOT NULL,
+    deploy_source_path VARCHAR(512),
     start_command VARCHAR(1024),
     restart_command VARCHAR(1024),
     language_type VARCHAR(32),

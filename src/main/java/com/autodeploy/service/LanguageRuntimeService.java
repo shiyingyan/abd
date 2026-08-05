@@ -68,13 +68,16 @@ public class LanguageRuntimeService {
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
+            // Regex to extract version numbers like 1.2.3, v18.16.0, 11.0.19+7, etc.
+            java.util.regex.Pattern versionPattern = java.util.regex.Pattern.compile("v?(\\d+\\.\\d+(?:\\.\\d+)?(?:[+\\-]\\w+)?)");
+
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), "UTF-8"))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    String trimmed = line.trim();
-                    if (!trimmed.isEmpty()) {
-                        versions.add(trimmed);
+                    java.util.regex.Matcher matcher = versionPattern.matcher(line);
+                    if (matcher.find()) {
+                        versions.add(matcher.group());
                     }
                 }
             }
@@ -92,7 +95,7 @@ public class LanguageRuntimeService {
      * Generate the version switch command prefix for a build.
      */
     public String getSwitchCommand(LanguageType language, String version) {
-        if (language == null || version == null) return "";
+        if (language == null || version == null || version.trim().isEmpty()) return "";
         return language.getUseCommand(version);
     }
 
@@ -102,7 +105,7 @@ public class LanguageRuntimeService {
      */
     public String buildFullCommand(LanguageType language, String version, String buildCommand, String customInstallDir) {
         StringBuilder sb = new StringBuilder();
-        if (language != null && version != null) {
+        if (language != null && version != null && !version.trim().isEmpty()) {
             if (customInstallDir != null && !customInstallDir.trim().isEmpty()) {
                 if (isWindows()) {
                     // Windows: set PATH=customDir;...

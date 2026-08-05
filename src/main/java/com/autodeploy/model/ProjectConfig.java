@@ -48,6 +48,9 @@ public class ProjectConfig {
     @TableField("deploy_target_path")
     private String deployTargetPath;
 
+    @TableField("deploy_source_path")
+    private String deploySourcePath;
+
     @TableField("start_command")
     private String startCommand;
 
@@ -110,6 +113,9 @@ public class ProjectConfig {
 
     public String getDeployTargetPath() { return deployTargetPath; }
     public void setDeployTargetPath(String deployTargetPath) { this.deployTargetPath = deployTargetPath; }
+
+    public String getDeploySourcePath() { return deploySourcePath; }
+    public void setDeploySourcePath(String deploySourcePath) { this.deploySourcePath = deploySourcePath; }
 
     public String getStartCommand() { return startCommand; }
     public void setStartCommand(String startCommand) { this.startCommand = startCommand; }

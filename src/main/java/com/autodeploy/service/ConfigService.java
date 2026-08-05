@@ -100,6 +100,7 @@ public class ConfigService {
         snapshot.setDeployServerUser(original.getDeployServerUser());
         snapshot.setDeployAuthEnvKey(original.getDeployAuthEnvKey());
         snapshot.setDeployTargetPath(original.getDeployTargetPath());
+        snapshot.setDeploySourcePath(original.getDeploySourcePath());
         snapshot.setStartCommand(original.getStartCommand());
         snapshot.setRestartCommand(original.getRestartCommand());
         snapshot.setLanguageType(original.getLanguageType());
@@ -143,6 +144,12 @@ public class ConfigService {
             }
             if (workDir.contains("..")) {
                 errors.add("构建工作目录不能包含 .. (路径遍历)");
+            }
+        }
+        // Validate language version is set when language type is selected
+        if (config.getLanguageType() != null && !config.getLanguageType().trim().isEmpty()) {
+            if (config.getLanguageVersion() == null || config.getLanguageVersion().trim().isEmpty()) {
+                errors.add("已选择语言类型 " + config.getLanguageType() + "，请选择对应的语言版本");
             }
         }
         return errors;

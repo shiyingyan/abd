@@ -109,30 +109,49 @@ public class BuildService {
                     workDir = repoDir;
                 }
 
+                // Step 3.5: For Node projects, check if npm install is needed
+                if ("NODE".equalsIgnoreCase(config.getLanguageType())) {
+                    File packageJson = new File(workDir, "package.json");
+                    File nodeModules = new File(workDir, "node_modules");
+                    boolean needsInstall = false;
+
+                    if (packageJson.isFile()) {
+                        if (!nodeModules.isDirectory()) {
+                            needsInstall = true;
+                            logLine(task, logWriter, "node_modules not found, npm install required");
+                        } else if (packageJson.lastModified() > nodeModules.lastModified()) {
+                            needsInstall = true;
+                            logLine(task, logWriter, "package.json has changed, npm install required");
+                        } else {
+                            logLine(task, logWriter, "package.json unchanged, skipping npm install");
+                        }
+                    }
+
+                    if (needsInstall) {
+                        String npmInstallCmd = runtimeService.buildFullCommand(
+                                LanguageType.fromString(config.getLanguageType()),
+                                config.getLanguageVersion(),
+                                "npm install",
+                                config.getCustomInstallDir()
+                        );
+                        logLine(task, logWriter, "=== npm install ===");
+                        int installExit = executeProcess(task, logWriter, npmInstallCmd, workDir);
+                        if (installExit != 0) {
+                            logLine(task, logWriter, "=== npm install FAILED (exit code: " + installExit + ") ===");
+                            task.setStatus(BuildTaskStatus.FAILED);
+                            task.setErrorMessage("npm install exit code: " + installExit);
+                            saveBuildRecord(task, "FAIL", "FAIL");
+                            return;
+                        }
+                        logLine(task, logWriter, "=== npm install completed ===");
+                    }
+                }
+
                 logLine(task, logWriter, "=== Build command: " + buildCmd + " ===");
                 logLine(task, logWriter, "=== Working dir: " + workDir.getAbsolutePath() + " ===");
 
                 // Step 4: Execute build
-                ProcessBuilder pb;
-                if (isWindows()) {
-                    pb = new ProcessBuilder("cmd", "/c", buildCmd);
-                } else {
-                    pb = new ProcessBuilder("bash", "-c", buildCmd);
-                }
-                pb.directory(workDir);
-                pb.redirectErrorStream(true);
-                Process process = pb.start();
-
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(process.getInputStream(),
-                                isWindows() ? Charset.forName("GBK") : Charset.forName("UTF-8")))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        logLine(task, logWriter, line);
-                    }
-                }
-
-                int exitCode = process.waitFor();
+                int exitCode = executeProcess(task, logWriter, buildCmd, workDir);
                 if (exitCode == 0) {
                     logLine(task, logWriter, "=== Build SUCCESS ===");
                     task.setStatus(BuildTaskStatus.SUCCESS);
@@ -142,7 +161,8 @@ public class BuildService {
                     task.setStatus(BuildTaskStatus.DEPLOYING);
                     boolean hasRestart = (config.getStartCommand() != null && !config.getStartCommand().trim().isEmpty())
                             || (config.getRestartCommand() != null && !config.getRestartCommand().trim().isEmpty());
-                    boolean deployOk = deployService.deploy(config, workDir.getAbsolutePath());
+                    boolean deployOk = deployService.deploy(config, workDir.getAbsolutePath(),
+                            line -> logLine(task, logWriter, line));
                     if (deployOk) {
                         if (!hasRestart) {
                             logLine(task, logWriter, "No restart required");
@@ -194,6 +214,28 @@ public class BuildService {
         task.pushLog(line);
     }
 
+    private int executeProcess(BuildTask task, PrintWriter logWriter, String command, File workDir) throws Exception {
+        ProcessBuilder pb;
+        if (isWindows()) {
+            pb = new ProcessBuilder("cmd", "/c", command);
+        } else {
+            pb = new ProcessBuilder("bash", "-c", command);
+        }
+        pb.directory(workDir);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream(),
+                        isWindows() ? Charset.forName("GBK") : Charset.forName("UTF-8")))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                logLine(task, logWriter, line);
+            }
+        }
+        return process.waitFor();
+    }
+
     private boolean isWindows() {
         return System.getProperty("os.name").toLowerCase().contains("win");
     }
@@ -230,7 +272,19 @@ public class BuildService {
     public SseEmitter subscribeLog(String taskId) {
         BuildTask task = taskMap.get(taskId);
         if (task == null) return null;
-        SseEmitter emitter = new SseEmitter(300000L);
+        SseEmitter emitter = new SseEmitter(1800000L); // 30 minutes
+        emitter.onTimeout(() -> {
+            log.debug("SSE timeout for task {}", taskId);
+            task.removeEmitter(emitter);
+        });
+        emitter.onCompletion(() -> {
+            log.debug("SSE completed for task {}", taskId);
+            task.removeEmitter(emitter);
+        });
+        emitter.onError(e -> {
+            log.debug("SSE error for task {}: {}", taskId, e.getMessage());
+            task.removeEmitter(emitter);
+        });
 
         // Send buffered log lines first (for late subscribers)
         try {

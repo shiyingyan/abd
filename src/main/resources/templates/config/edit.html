@@ -9,7 +9,7 @@
         <div class="col-md-10">
             <h4 th:text="${isNew} ? '新建项目配置' : '编辑项目配置'">编辑配置</h4>
             <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
-            <form th:action="@{/config/save}" th:object="${config}" method="post">
+            <form th:action="@{/config/save}" th:object="${config}" method="post" id="configForm">
                 <input type="hidden" th:field="*{id}"/>
                 <div class="row">
                     <div class="col-md-6 mb-3">
@@ -60,7 +60,7 @@
                 </div>
                 <div class="row">
                     <div class="col-md-4 mb-3">
-                        <label class="form-label">语言类型</label>
+                        <label class="form-label">语言类型 <span class="text-danger">*</span></label>
                         <select class="form-select" th:field="*{languageType}">
                             <option value="">--</option>
                             <option value="JAVA">Java</option>
@@ -70,7 +70,7 @@
                         </select>
                     </div>
                     <div class="col-md-4 mb-3">
-                        <label class="form-label">语言版本</label>
+                        <label class="form-label">语言版本 <span class="text-danger">*</span></label>
                         <select class="form-select" id="languageVersionSelect" name="languageVersion">
                             <option value="">请先选择语言类型</option>
                         </select>
@@ -115,6 +115,14 @@
                     <label class="form-label">部署目标路径 *</label>
                     <input type="text" class="form-control" th:field="*{deployTargetPath}" required
                            placeholder="/opt/apps/myapp/"/>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">构建产物路径</label>
+                    <input type="text" class="form-control" th:field="*{deploySourcePath}"
+                           placeholder="相对于项目根目录，如 target、dist"/>
+                    <div class="form-text">
+                        指定构建后需要部署的产物目录（相对于项目根目录）。留空时系统根据语言类型自动推断：Java 取 target 目录下的 jar 文件，Node 取 dist 目录，Go 取项目根目录下的可执行文件，Python 取项目根目录。
+                    </div>
                 </div>
                 <div class="row">
                     <div class="col-md-6 mb-3">
@@ -176,7 +184,6 @@
     function loadVersions(langType) {
         var select = document.getElementById('languageVersionSelect');
         var noVersionsMsg = document.getElementById('noVersionsMsg');
-        select.innerHTML = '<option value="">加载中...</option>';
         noVersionsMsg.classList.add('d-none');
 
         if (!langType) {
@@ -184,10 +191,22 @@
             return;
         }
 
+        // Show saved version immediately while loading
+        if (currentLanguageVersion) {
+            select.innerHTML = '<option value="' + currentLanguageVersion + '">' + currentLanguageVersion + ' (加载中...)</option>';
+        } else {
+            select.innerHTML = '<option value="">加载中...</option>';
+        }
+
         $.get('/api/runtime/versions', {language: langType}, function(versions) {
             select.innerHTML = '';
             if (!versions || versions.length === 0) {
-                select.innerHTML = '<option value="">无可用版本</option>';
+                // Keep saved version even if no versions found from system
+                if (currentLanguageVersion) {
+                    select.innerHTML = '<option value="' + currentLanguageVersion + '">' + currentLanguageVersion + '</option>';
+                } else {
+                    select.innerHTML = '<option value="">无可用版本</option>';
+                }
                 noVersionsMsg.classList.remove('d-none');
                 return;
             }
@@ -202,19 +221,38 @@
                 select.appendChild(opt);
             });
         }).fail(function() {
-            select.innerHTML = '<option value="">加载失败</option>';
+            // Keep saved version on load failure
+            if (currentLanguageVersion) {
+                select.innerHTML = '<option value="' + currentLanguageVersion + '">' + currentLanguageVersion + '</option>';
+            } else {
+                select.innerHTML = '<option value="">加载失败</option>';
+            }
         });
     }
 
     $(document).ready(function() {
         var langSelect = document.querySelector('[name="languageType"]');
         langSelect.addEventListener('change', function() {
+            // Reset saved version when user changes language type
+            currentLanguageVersion = '';
             loadVersions(this.value);
         });
         // Load versions on page load if language type is already selected
         if (langSelect.value) {
             loadVersions(langSelect.value);
         }
+
+        // Form validation: language version required when language type is selected
+        $('#configForm').on('submit', function(e) {
+            var langType = $('[name="languageType"]').val();
+            var langVersion = $('[name="languageVersion"]').val();
+            if (langType && !langVersion) {
+                e.preventDefault();
+                alert('已选择语言类型 ' + langType + '，请选择对应的语言版本');
+                $('[name="languageVersion"]').focus();
+                return false;
+            }
+        });
     });
 </script>
 </body>

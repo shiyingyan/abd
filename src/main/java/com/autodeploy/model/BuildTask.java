@@ -40,6 +40,10 @@ public class BuildTask {
         emitter.onError(e -> emitters.remove(emitter));
     }
 
+    public void removeEmitter(SseEmitter emitter) {
+        emitters.remove(emitter);
+    }
+
     public void pushLog(String line) {
         for (SseEmitter emitter : emitters) {
             try {
