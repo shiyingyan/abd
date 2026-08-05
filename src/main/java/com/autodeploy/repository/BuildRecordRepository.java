@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Select;
 
 public interface BuildRecordRepository extends BaseMapper<BuildRecord> {
 
-    @Select("SELECT * FROM build_records WHERE build_time < #{cutoffDate}")
-    java.util.List<BuildRecord> findExpiredRecords(@Param("cutoffDate") java.time.LocalDateTime cutoffDate);
+  @Select("SELECT * FROM build_records WHERE build_time < #{cutoffDate}")
+  java.util.List<BuildRecord> findExpiredRecords(
+      @Param("cutoffDate") java.time.LocalDateTime cutoffDate);
 }

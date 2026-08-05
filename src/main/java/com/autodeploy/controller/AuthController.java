@@ -13,88 +13,81 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-
-import java.util.HashMap;
-import java.util.Map;
 
 @Controller
 public class AuthController {
 
-    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+  private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
-    @Autowired
-    private UserService userService;
+  @Autowired private UserService userService;
 
-    @GetMapping("/login.jsp")
-    public String loginPage1(){
-        return "redirect:/login";
+  @GetMapping("/login.jsp")
+  public String loginPage1() {
+    return "redirect:/login";
+  }
+
+  @GetMapping({"/login"})
+  public String loginPage() {
+    Subject subject = SecurityUtils.getSubject();
+    if (subject.isAuthenticated()) {
+      return "redirect:/";
     }
-    @GetMapping({"/login"})
-    public String loginPage() {
-        Subject subject = SecurityUtils.getSubject();
-        if (subject.isAuthenticated()) {
-            return "redirect:/";
-        }
-        return "auth/login";
+    return "auth/login";
+  }
+
+  @PostMapping("/login")
+  public String doLogin(@RequestParam String username, @RequestParam String password, Model model) {
+    try {
+      Subject subject = SecurityUtils.getSubject();
+      UsernamePasswordToken token = new UsernamePasswordToken(username, password);
+      subject.login(token);
+      return "redirect:/";
+    } catch (AuthenticationException e) {
+      log.warn("Login failed for user: {}", username, e);
+      model.addAttribute("error", "用户名或密码错误");
+      model.addAttribute("username", username);
+      return "auth/login";
     }
+  }
 
-    @PostMapping("/login")
-    public String doLogin(@RequestParam String username,
-                          @RequestParam String password,
-                          Model model) {
-        try {
-            Subject subject = SecurityUtils.getSubject();
-            UsernamePasswordToken token = new UsernamePasswordToken(username, password);
-            subject.login(token);
-            return "redirect:/";
-        } catch (AuthenticationException e) {
-            log.warn("Login failed for user: {}", username, e);
-            model.addAttribute("error", "用户名或密码错误");
-            model.addAttribute("username", username);
-            return "auth/login";
-        }
+  @GetMapping("/register")
+  public String registerPage() {
+    return "auth/register";
+  }
+
+  @PostMapping("/register")
+  public String doRegister(
+      @RequestParam String username, @RequestParam String password, Model model) {
+    if (username == null || username.trim().isEmpty()) {
+      model.addAttribute("error", "用户名不能为空");
+      return "auth/register";
     }
-
-    @GetMapping("/register")
-    public String registerPage() {
-        return "auth/register";
-    }
-
-    @PostMapping("/register")
-    public String doRegister(@RequestParam String username,
-                             @RequestParam String password,
-                             Model model) {
-        if (username == null || username.trim().isEmpty()) {
-            model.addAttribute("error", "用户名不能为空");
-            return "auth/register";
-        }
-        if (password == null || password.trim().isEmpty()) {
-            model.addAttribute("error", "密码不能为空");
-            return "auth/register";
-        }
-
-        User user = userService.register(username.trim(), password);
-        if (user == null) {
-            model.addAttribute("error", "用户名已存在");
-            model.addAttribute("username", username);
-            return "auth/register";
-        }
-
-        model.addAttribute("success", "注册成功，请登录");
-        return "auth/login";
+    if (password == null || password.trim().isEmpty()) {
+      model.addAttribute("error", "密码不能为空");
+      return "auth/register";
     }
 
-    @GetMapping("/logout")
-    public String logout() {
-        Subject subject = SecurityUtils.getSubject();
-        subject.logout();
-        return "redirect:/login";
+    User user = userService.register(username.trim(), password);
+    if (user == null) {
+      model.addAttribute("error", "用户名已存在");
+      model.addAttribute("username", username);
+      return "auth/register";
     }
 
-    @GetMapping("/")
-    public String index() {
-        return "redirect:/build";
-    }
+    model.addAttribute("success", "注册成功，请登录");
+    return "auth/login";
+  }
+
+  @GetMapping("/logout")
+  public String logout() {
+    Subject subject = SecurityUtils.getSubject();
+    subject.logout();
+    return "redirect:/login";
+  }
+
+  @GetMapping("/")
+  public String index() {
+    return "redirect:/build";
+  }
 }
