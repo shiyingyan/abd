@@ -85,36 +85,14 @@
                     </div>
                 </div>
                 <hr/>
-                <h6>部署服务器配置</h6>
-                <div class="row">
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label">服务器地址 *</label>
-                        <input type="text" class="form-control" th:field="*{deployServerHost}" required/>
-                    </div>
-                    <div class="col-md-2 mb-3">
-                        <label class="form-label">SSH 端口</label>
-                        <input type="number" class="form-control" th:field="*{deployServerPort}" value="22"/>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <label class="form-label">用户名</label>
-                        <input type="text" class="form-control" th:field="*{deployServerUser}"/>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <label class="form-label">认证环境变量名</label>
-                        <input type="text" class="form-control" th:field="*{deployAuthEnvKey}"
-                               placeholder="如 DEPLOY_SSH_PASSWORD"/>
-                    </div>
-                </div>
+                <h6>部署配置</h6>
                 <div class="mb-3">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="testDeployConnBtn">
-                        <i class="bi bi-plug me-1"></i>测试连接
-                    </button>
-                    <span id="testDeployResult" class="ms-2"></span>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">部署目标路径 *</label>
-                    <input type="text" class="form-control" th:field="*{deployTargetPath}" required
+                    <label class="form-label">部署目标路径</label>
+                    <input type="text" class="form-control" th:field="*{deployTargetPath}"
                            placeholder="/opt/apps/myapp/"/>
+                    <div class="form-text">
+                        留空时使用服务器默认路径。指定后，所有关联服务器都使用此路径。
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">构建产物路径</label>
@@ -140,6 +118,65 @@
                                placeholder="留空表示不需要重启"/>
                     </div>
                 </div>
+
+                <!-- Environment-Server Association -->
+                <div class="mb-3">
+                    <hr/>
+                    <h6>项目环境与服务器配置</h6>
+                    <div th:if="${isNew}" class="alert alert-info">
+                        <i class="bi bi-info-circle me-1"></i>
+                        请先保存项目配置，然后在此处添加部署环境和服务器。
+                    </div>
+                    <div th:if="${!isNew}" class="card mb-3">
+                        <div class="card-body">
+                            <div class="row g-2 align-items-end mb-3">
+                                <div class="col-md-3">
+                                    <label class="form-label">选择环境</label>
+                                    <select class="form-select" id="pesEnvSelect">
+                                        <option value="">-- 请选择 --</option>
+                                        <option th:each="env : ${environments}" th:value="${env.id}" th:text="${env.name}"></option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">选择服务器</label>
+                                    <select class="form-select" id="pesServerSelect">
+                                        <option value="">请先选择环境</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <button type="button" class="btn btn-outline-primary btn-sm" id="addPesBtn">
+                                        <i class="bi bi-plus-circle me-1"></i>添加
+                                    </button>
+                                </div>
+                            </div>
+                            <table class="table table-sm mb-0" id="pesTable">
+                                <thead>
+                                    <tr><th>环境</th><th>服务器</th><th>地址</th><th>部署</th><th>操作</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr th:each="pes : ${projectEnvServers}" th:data-id="${pes.id}">
+                                        <td><span class="badge bg-info" th:text="${pes.environmentName}"></span></td>
+                                        <td th:text="${pes.serverName}"></td>
+                                        <td><code th:text="${pes.serverHost}"></code></td>
+                                        <td>
+                                            <div class="form-check form-switch mb-0">
+                                                <input class="form-check-input toggle-deploy-switch" type="checkbox"
+                                                       th:data-id="${pes.id}"
+                                                       th:checked="${pes.deployEnabled == null || pes.deployEnabled}"/>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-outline-danger remove-pes-btn" th:data-id="${pes.id}">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="mb-3">
                     <button type="submit" class="btn btn-primary">保存</button>
                     <a th:href="@{/config}" class="btn btn-secondary">取消</a>
@@ -151,35 +188,6 @@
 <th:block th:replace="fragments/common :: scripts"></th:block>
 <script th:inline="javascript">
     var currentLanguageVersion = /*[[${config.languageVersion}]]*/ '';
-
-    // Test deploy server connection
-    $('#testDeployConnBtn').click(function() {
-        var btn = $(this);
-        var resultSpan = $('#testDeployResult');
-        var host = $('[name="deployServerHost"]').val();
-        var port = $('[name="deployServerPort"]').val() || 22;
-        var user = $('[name="deployServerUser"]').val();
-        var authEnvKey = $('[name="deployAuthEnvKey"]').val();
-        if (!host) {
-            resultSpan.html('<span class="text-danger">请先填写服务器地址</span>');
-            return;
-        }
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>测试中...');
-        resultSpan.html('');
-        $.post('/api/config/test-deploy-server', {
-            host: host, port: port, user: user, authEnvKey: authEnvKey
-        }, function(data) {
-            if (data.success) {
-                resultSpan.html('<span class="text-success"><i class="bi bi-check-circle me-1"></i>' + data.message + '</span>');
-            } else {
-                resultSpan.html('<span class="text-danger"><i class="bi bi-x-circle me-1"></i>' + data.message + '</span>');
-            }
-        }).fail(function() {
-            resultSpan.html('<span class="text-danger">请求失败</span>');
-        }).always(function() {
-            btn.prop('disabled', false).html('<i class="bi bi-plug me-1"></i>测试连接');
-        });
-    });
 
     function loadVersions(langType) {
         var select = document.getElementById('languageVersionSelect');
@@ -251,6 +259,74 @@
                 alert('已选择语言类型 ' + langType + '，请选择对应的语言版本');
                 $('[name="languageVersion"]').focus();
                 return false;
+            }
+        });
+    });
+
+    // ===== Project-Environment-Server Association =====
+    var configId = /*[[${config.id}]]*/ null;
+
+    $('#pesEnvSelect').change(function() {
+        var envId = $(this).val();
+        var serverSelect = $('#pesServerSelect');
+        if (!envId) {
+            serverSelect.html('<option value="">请先选择环境</option>');
+            return;
+        }
+        serverSelect.html('<option value="">加载中...</option>');
+        $.get('/api/servers/by-environment/' + envId, function(servers) {
+            serverSelect.html('<option value="">-- 请选择服务器 --</option>');
+            servers.forEach(function(s) {
+                serverSelect.append('<option value="' + s.id + '">' + s.name + ' (' + s.host + ')</option>');
+            });
+        }).fail(function() {
+            serverSelect.html('<option value="">加载失败</option>');
+        });
+    });
+
+    $('#addPesBtn').click(function() {
+        var envId = $('#pesEnvSelect').val();
+        var serverId = $('#pesServerSelect').val();
+        if (!envId || !serverId) {
+            alert('请选择环境和服务器');
+            return;
+        }
+        var btn = $(this);
+        btn.prop('disabled', true);
+        $.post('/api/config/' + configId + '/env-servers', {
+            environmentId: envId, serverId: serverId
+        }, function() {
+            location.reload();
+        }).fail(function() {
+            alert('添加失败');
+            btn.prop('disabled', false);
+        });
+    });
+
+    $('.remove-pes-btn').click(function() {
+        var id = $(this).data('id');
+        if (!confirm('确认移除此服务器关联？')) return;
+        var btn = $(this);
+        btn.prop('disabled', true);
+        $.ajax({
+            url: '/api/config/env-servers/' + id,
+            type: 'DELETE',
+            success: function() { location.reload(); },
+            error: function() { alert('移除失败'); btn.prop('disabled', false); }
+        });
+    });
+
+    $('.toggle-deploy-switch').change(function() {
+        var id = $(this).data('id');
+        var enabled = $(this).prop('checked');
+        var sw = $(this);
+        $.ajax({
+            url: '/api/config/env-servers/' + id + '/toggle-deploy',
+            type: 'PATCH',
+            data: { enabled: enabled },
+            error: function() {
+                alert('更新失败');
+                sw.prop('checked', !enabled);
             }
         });
     });

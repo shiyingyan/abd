@@ -1,6 +1,8 @@
 package com.autodeploy.service;
 
 import com.autodeploy.model.ProjectConfig;
+import com.autodeploy.model.ProjectEnvServer;
+import com.autodeploy.model.ServerInfo;
 import com.autodeploy.util.EnvVarUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +16,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,31 +27,19 @@ public class DeployService {
     private static final Logger log = LoggerFactory.getLogger(DeployService.class);
 
     @Autowired private SshService sshService;
+    @Autowired private ServerInfoService serverInfoService;
 
     @Value("${autodeploy.builds-dir}")
     private String buildsDir;
 
     /**
-     * Deploy build artifact to target server:
-     * 1. Resolve artifact path (by config or language type)
-     * 2. Backup existing files on deploy server
-     * 3. Upload artifact via SCP
-     * 4. Execute restart/start command
+     * Deploy build artifact to all associated servers:
+     * 1. Get server list from project_env_server associations (fallback to inline config fields)
+     * 2. Resolve artifact path (by config or language type)
+     * 3. For each server: backup, upload, restart
      */
     public boolean deploy(ProjectConfig config, String workDir, Consumer<String> logConsumer) {
         try {
-            String password = getDeployPassword(config);
-            if (password == null) {
-                logConsumer.accept("Deploy auth env var not set: " + config.getDeployAuthEnvKey());
-                log.error("Deploy auth env var not set: {}", config.getDeployAuthEnvKey());
-                return false;
-            }
-
-            String host = config.getDeployServerHost();
-            int port = config.getDeployServerPort() != null ? config.getDeployServerPort() : 22;
-            String user = config.getDeployServerUser();
-            String targetPath = config.getDeployTargetPath();
-
             // Step 1: Resolve artifact source path
             File artifactSource = resolveArtifactSource(config, workDir, logConsumer);
             if (artifactSource == null) {
@@ -56,17 +47,85 @@ public class DeployService {
             }
             logConsumer.accept("Deploy artifact source: " + artifactSource.getAbsolutePath());
 
-            // Step 2: Backup existing deployment on target server
+            // Step 2: Get target servers from associations
+            List<ProjectEnvServer> associations = serverInfoService.listProjectAssociations(config.getId());
+            if (associations.isEmpty()) {
+                // Fallback to inline config fields for backward compatibility
+                if (config.getDeployServerHost() != null && !config.getDeployServerHost().trim().isEmpty()) {
+                    logConsumer.accept("No server associations found, using inline config (legacy mode)");
+                    return deployToServer(config, config.getDeployServerHost(),
+                            config.getDeployServerPort() != null ? config.getDeployServerPort() : 22,
+                            config.getDeployServerUser(), config.getDeployAuthEnvKey(),
+                            artifactSource, logConsumer);
+                }
+                logConsumer.accept("No deploy servers configured (neither associations nor inline)");
+                return false;
+            }
+
+            // Step 3: Deploy to each associated server
+            boolean allSuccess = true;
+            boolean anyDeployed = false;
+            for (ProjectEnvServer assoc : associations) {
+                if (assoc.getDeployEnabled() != null && !assoc.getDeployEnabled()) {
+                    logConsumer.accept("Skipping server (deploy disabled): id=" + assoc.getServerId());
+                    continue;
+                }
+                anyDeployed = true;
+                ServerInfo server = serverInfoService.getById(assoc.getServerId());
+                if (server == null) {
+                    logConsumer.accept("Server not found (id=" + assoc.getServerId() + "), skipping");
+                    allSuccess = false;
+                    continue;
+                }
+                logConsumer.accept("Deploying to server: " + server.getName() + " (" + server.getHost() + ")");
+                int serverPort = server.getPort() != null ? server.getPort() : 22;
+                boolean ok = deployToServer(config, server.getHost(), serverPort, server.getUser(),
+                        server.getAuthEnvKey(), artifactSource, logConsumer);
+                if (!ok) {
+                    logConsumer.accept("Deploy FAILED for server: " + server.getName());
+                    allSuccess = false;
+                } else {
+                    logConsumer.accept("Deploy SUCCESS for server: " + server.getName());
+                }
+            }
+            if (!anyDeployed) {
+                logConsumer.accept("No servers enabled for deployment");
+            }
+            return allSuccess;
+        } catch (Exception e) {
+            log.error("Deploy failed for {}", config.getProjectName(), e);
+            logConsumer.accept("Deploy exception: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean deployToServer(ProjectConfig config, String host, int port, String user,
+                                    String authEnvKey, File artifactSource, Consumer<String> logConsumer) {
+        try {
+            String password = EnvVarUtil.getValue(authEnvKey);
+            if (password == null) {
+                logConsumer.accept("Deploy auth env var not set: " + authEnvKey);
+                log.error("Deploy auth env var not set: {}", authEnvKey);
+                return false;
+            }
+
+            String targetPath = config.getDeployTargetPath();
+            if (targetPath == null || targetPath.trim().isEmpty()) {
+                logConsumer.accept("Deploy target path not configured");
+                return false;
+            }
+
+            // Backup existing deployment
             backupExistingDeployment(host, port, user, password, targetPath, logConsumer);
 
-            // Step 3: Upload artifact
+            // Upload artifact
             logConsumer.accept("Uploading artifact to " + host + ":" + targetPath);
             sshService.uploadFile(host, port, user, password,
                     artifactSource.getAbsolutePath(), targetPath);
             logConsumer.accept("Artifact uploaded successfully");
             log.info("Artifact uploaded to {}:{}", host, targetPath);
 
-            // Step 4: Execute restart command
+            // Execute restart command
             String cmd = config.getRestartCommand();
             if (cmd == null || cmd.trim().isEmpty()) {
                 cmd = config.getStartCommand();
@@ -81,7 +140,7 @@ public class DeployService {
             }
             return true;
         } catch (Exception e) {
-            log.error("Deploy failed for {}", config.getProjectName(), e);
+            log.error("Deploy to {} failed", host, e);
             logConsumer.accept("Deploy exception: " + e.getMessage());
             return false;
         }
@@ -232,12 +291,5 @@ public class DeployService {
             return false;
         }
         return sshService.testConnection(host, port, user, password);
-    }
-
-    private String getDeployPassword(ProjectConfig config) {
-        if (config.getDeployAuthEnvKey() == null || config.getDeployAuthEnvKey().trim().isEmpty()) {
-            return null;
-        }
-        return EnvVarUtil.getValue(config.getDeployAuthEnvKey());
     }
 }

@@ -127,12 +127,6 @@ public class ConfigService {
         if (config.getBuildCommand() == null || config.getBuildCommand().trim().isEmpty()) {
             errors.add("构建指令不能为空");
         }
-        if (config.getDeployServerHost() == null || config.getDeployServerHost().trim().isEmpty()) {
-            errors.add("部署服务器地址不能为空");
-        }
-        if (config.getDeployTargetPath() == null || config.getDeployTargetPath().trim().isEmpty()) {
-            errors.add("部署目标路径不能为空");
-        }
         if (config.getDeployServerPort() != null && (config.getDeployServerPort() < 1 || config.getDeployServerPort() > 65535)) {
             errors.add("SSH 端口必须在 1-65535 范围内");
         }

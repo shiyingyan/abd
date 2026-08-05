@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('部署环境维护 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4>部署环境维护</h4>
+                <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addEnvModal">
+                    <i class="bi bi-plus-circle me-1"></i>新建环境
+                </button>
+            </div>
+
+            <div th:if="${param.error}" class="alert alert-danger" th:text="${param.error}"></div>
+
+            <div class="card">
+                <div class="card-body">
+                    <table class="table table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>环境名称</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="env : ${environments}">
+                                <td th:text="${env.id}"></td>
+                                <td th:text="${env.name}"></td>
+                                <td th:text="${#temporals.format(env.createdAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary edit-env-btn"
+                                            th:data-id="${env.id}" th:data-name="${env.name}">编辑</button>
+                                    <a th:href="@{/environment/delete/{id}(id=${env.id})}"
+                                       class="btn btn-sm btn-outline-danger"
+                                       onclick="return confirm('确认删除此环境？关联的服务器将取消关联。')">删除</a>
+                                </td>
+                            </tr>
+                            <tr th:if="${environments.isEmpty()}">
+                                <td colspan="4" class="text-center text-muted py-4">暂无部署环境，请点击"新建环境"创建</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Environment Modal -->
+<div class="modal fade" id="addEnvModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form th:action="@{/environment/save}" method="post">
+                <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>新建部署环境</h5></div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">环境名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" required
+                               placeholder="如：生产环境、测试环境、预发布环境"/>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Environment Modal -->
+<div class="modal fade" id="editEnvModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form th:action="@{/environment/save}" method="post">
+                <input type="hidden" name="id" id="editEnvId"/>
+                <div class="modal-header"><h5 class="modal-title"><i class="bi bi-pencil me-2"></i>编辑部署环境</h5></div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">环境名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" id="editEnvName" required/>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<th:block th:replace="fragments/common :: scripts"></th:block>
+<script>
+$('.edit-env-btn').click(function() {
+    var id = $(this).data('id');
+    var name = $(this).data('name');
+    $('#editEnvId').val(id);
+    $('#editEnvName').val(name);
+    new bootstrap.Modal(document.getElementById('editEnvModal')).show();
+});
+</script>
+</body>
+</html>

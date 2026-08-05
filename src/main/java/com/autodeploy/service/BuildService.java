@@ -219,7 +219,10 @@ public class BuildService {
         if (isWindows()) {
             pb = new ProcessBuilder("cmd", "/c", command);
         } else {
-            pb = new ProcessBuilder("bash", "-c", command);
+            String shell = LanguageRuntimeService.detectShell();
+            String fullCommand = LanguageRuntimeService.buildShellPreamble(shell) + " && " + command;
+            pb = new ProcessBuilder(shell, "-l", "-c", fullCommand);
+            LanguageRuntimeService.appendMacPaths(pb);
         }
         pb.directory(workDir);
         pb.redirectErrorStream(true);

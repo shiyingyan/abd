@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('服务器维护 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4>服务器维护</h4>
+                <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addServerModal" id="addServerBtn">
+                    <i class="bi bi-plus-circle me-1"></i>新建服务器
+                </button>
+            </div>
+
+            <div th:if="${param.error}" class="alert alert-danger" th:text="${param.error}"></div>
+
+            <!-- Build Servers -->
+            <div class="card mb-3">
+                <div class="card-header"><i class="bi bi-hammer me-2"></i>构建服务器</div>
+                <div class="card-body p-0">
+                    <table class="table table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>地址</th>
+                                <th>端口</th>
+                                <th>用户名</th>
+                                <th>认证变量</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="s : ${servers}" th:if="${s.serverType == 'BUILD'}">
+                                <td th:text="${s.name}"></td>
+                                <td th:text="${s.host}"></td>
+                                <td th:text="${s.port}"></td>
+                                <td th:text="${s.user}"></td>
+                                <td><code th:text="${s.authEnvKey}"></code></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info test-conn-btn"
+                                            th:data-host="${s.host}" th:data-port="${s.port}"
+                                            th:data-user="${s.user}" th:data-auth="${s.authEnvKey}">
+                                        <i class="bi bi-plug me-1"></i>测试
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary edit-server-btn"
+                                            th:data-id="${s.id}" th:data-name="${s.name}"
+                                            th:data-host="${s.host}" th:data-port="${s.port}"
+                                            th:data-user="${s.user}" th:data-auth="${s.authEnvKey}"
+                                            th:data-type="${s.serverType}" th:data-env="${s.environmentId}">编辑</button>
+                                    <a th:href="@{/server/delete/{id}(id=${s.id})}"
+                                       class="btn btn-sm btn-outline-danger"
+                                       onclick="return confirm('确认删除?')">删除</a>
+                                </td>
+                            </tr>
+                            <tr th:if="${#lists.isEmpty(servers.?[serverType == 'BUILD'])}">
+                                <td colspan="6" class="text-center text-muted py-3">暂无构建服务器</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Deploy Servers -->
+            <div class="card mb-3">
+                <div class="card-header"><i class="bi bi-cloud-upload me-2"></i>部署服务器</div>
+                <div class="card-body p-0">
+                    <table class="table table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>地址</th>
+                                <th>端口</th>
+                                <th>用户名</th>
+                                <th>认证变量</th>
+                                <th>所属环境</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="s : ${servers}" th:if="${s.serverType == 'DEPLOY'}">
+                                <td th:text="${s.name}"></td>
+                                <td th:text="${s.host}"></td>
+                                <td th:text="${s.port}"></td>
+                                <td th:text="${s.user}"></td>
+                                <td><code th:text="${s.authEnvKey}"></code></td>
+                                <td><span class="badge bg-info" th:text="${s.environmentName}"></span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info test-conn-btn"
+                                            th:data-host="${s.host}" th:data-port="${s.port}"
+                                            th:data-user="${s.user}" th:data-auth="${s.authEnvKey}">
+                                        <i class="bi bi-plug me-1"></i>测试
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary edit-server-btn"
+                                            th:data-id="${s.id}" th:data-name="${s.name}"
+                                            th:data-host="${s.host}" th:data-port="${s.port}"
+                                            th:data-user="${s.user}" th:data-auth="${s.authEnvKey}"
+                                            th:data-type="${s.serverType}" th:data-env="${s.environmentId}">编辑</button>
+                                    <a th:href="@{/server/delete/{id}(id=${s.id})}"
+                                       class="btn btn-sm btn-outline-danger"
+                                       onclick="return confirm('确认删除?')">删除</a>
+                                </td>
+                            </tr>
+                            <tr th:if="${#lists.isEmpty(servers.?[serverType == 'DEPLOY'])}">
+                                <td colspan="7" class="text-center text-muted py-3">暂无部署服务器</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Server Modal -->
+<div class="modal fade" id="addServerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form th:action="@{/server/save}" method="post">
+                <input type="hidden" name="id" id="serverId"/>
+                <div class="modal-header"><h5 class="modal-title" id="serverModalTitle"><i class="bi bi-plus-circle me-2"></i>新建服务器</h5></div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">服务器名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" id="serverName" required
+                               placeholder="如：生产服务器1号"/>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">服务器类型 <span class="text-danger">*</span></label>
+                        <select class="form-select" name="serverType" id="serverType" required>
+                            <option value="BUILD">构建服务器</option>
+                            <option value="DEPLOY">部署服务器</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="envSelectGroup">
+                        <label class="form-label">所属环境 <span class="text-danger">*</span></label>
+                        <select class="form-select" name="environmentId" id="environmentId">
+                            <option value="">-- 请选择环境 --</option>
+                            <option th:each="env : ${environments}" th:value="${env.id}" th:text="${env.name}"></option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-8 mb-3">
+                            <label class="form-label">服务器地址 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="host" id="serverHost" required
+                                   placeholder="如 192.168.1.100"/>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">SSH 端口</label>
+                            <input type="number" class="form-control" name="port" id="serverPort" value="22" min="1" max="65535"/>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">用户名</label>
+                            <input type="text" class="form-control" name="user" id="serverUser" placeholder="如 root"/>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">认证环境变量名</label>
+                            <input type="text" class="form-control" name="authEnvKey" id="serverAuthEnvKey"
+                                   placeholder="如 DEPLOY_SSH_PASSWORD"/>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<th:block th:replace="fragments/common :: scripts"></th:block>
+<script>
+function toggleEnvSelect() {
+    var type = $('#serverType').val();
+    if (type === 'DEPLOY') {
+        $('#envSelectGroup').show();
+        $('#environmentId').attr('required', true);
+    } else {
+        $('#envSelectGroup').hide();
+        $('#environmentId').removeAttr('required').val('');
+    }
+}
+
+$('#serverType').change(toggleEnvSelect);
+
+$('#addServerBtn').click(function() {
+    $('#serverModalTitle').html('<i class="bi bi-plus-circle me-2"></i>新建服务器');
+    $('#serverId').val('');
+    $('#serverName').val('');
+    $('#serverType').val('BUILD');
+    $('#serverHost').val('');
+    $('#serverPort').val(22);
+    $('#serverUser').val('');
+    $('#serverAuthEnvKey').val('');
+    $('#environmentId').val('');
+    toggleEnvSelect();
+});
+
+$('.edit-server-btn').click(function() {
+    var btn = $(this);
+    $('#serverModalTitle').html('<i class="bi bi-pencil me-2"></i>编辑服务器');
+    $('#serverId').val(btn.data('id'));
+    $('#serverName').val(btn.data('name'));
+    $('#serverType').val(btn.data('type'));
+    $('#serverHost').val(btn.data('host'));
+    $('#serverPort').val(btn.data('port'));
+    $('#serverUser').val(btn.data('user'));
+    $('#serverAuthEnvKey').val(btn.data('auth'));
+    $('#environmentId').val(btn.data('env') || '');
+    toggleEnvSelect();
+    new bootstrap.Modal(document.getElementById('addServerModal')).show();
+});
+
+$('.test-conn-btn').click(function() {
+    var btn = $(this);
+    var host = btn.data('host');
+    var port = btn.data('port') || 22;
+    var user = btn.data('user');
+    var auth = btn.data('auth');
+    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span>测试中...');
+    $.post('/api/servers/test-connection', {
+        host: host, port: port, user: user, authEnvKey: auth
+    }, function(data) {
+        if (data.success) {
+            alert('连接成功！');
+        } else {
+            alert('连接失败：' + data.message);
+        }
+    }).fail(function() {
+        alert('请求失败');
+    }).always(function() {
+        btn.prop('disabled', false).html('<i class="bi bi-plug me-1"></i>测试');
+    });
+});
+
+$(document).ready(function() {
+    toggleEnvSelect();
+});
+</script>
+</body>
+</html>
