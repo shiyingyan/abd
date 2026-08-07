@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @EnableTransactionManagement(proxyTargetClass = true)
 public class AutoDeployApplication {
 
-    public static void main(String[] args) {
-        SpringApplication.run(AutoDeployApplication.class, args);
-    }
+  public static void main(String[] args) {
+    SpringApplication.run(AutoDeployApplication.class, args);
+  }
 }

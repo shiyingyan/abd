@@ -1,6 +1,8 @@
 -- Auto Deploy Tool - Database Schema
 -- Compatible with MySQL 8.0+ and H2 (MySQL mode)
 
+create database if not exists auto_deploy;
+
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -23,11 +25,11 @@ CREATE TABLE IF NOT EXISTS project_config (
     git_auth_env_key VARCHAR(128),
     build_command VARCHAR(1024) NOT NULL,
     build_work_dir VARCHAR(512),
-    deploy_server_host VARCHAR(128) NOT NULL,
-    deploy_server_port INT DEFAULT 22,
+    deploy_server_host VARCHAR(128),
+    deploy_server_port INT,
     deploy_server_user VARCHAR(64),
     deploy_auth_env_key VARCHAR(128),
-    deploy_target_path VARCHAR(512) NOT NULL,
+    deploy_target_path VARCHAR(512),
     deploy_source_path VARCHAR(512),
     start_command VARCHAR(1024),
     restart_command VARCHAR(1024),
@@ -70,6 +72,41 @@ CREATE TABLE IF NOT EXISTS build_records (
     log_file_path VARCHAR(512),
     deploy_status VARCHAR(32),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Deploy environment table
+CREATE TABLE IF NOT EXISTS deploy_environment (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(128) NOT NULL UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Server info table
+CREATE TABLE IF NOT EXISTS server_info (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    host VARCHAR(128) NOT NULL,
+    port INT DEFAULT 22,
+    user VARCHAR(64),
+    auth_env_key VARCHAR(128),
+    server_type VARCHAR(32) NOT NULL COMMENT 'BUILD or DEPLOY',
+    environment_id BIGINT COMMENT 'FK to deploy_environment, only for DEPLOY type',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_server_env FOREIGN KEY (environment_id) REFERENCES deploy_environment(id) ON DELETE SET NULL
+);
+
+-- Project environment server association table
+CREATE TABLE IF NOT EXISTS project_env_server (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    project_id BIGINT NOT NULL,
+    environment_id BIGINT NOT NULL,
+    server_id BIGINT NOT NULL,
+    deploy_enabled TINYINT DEFAULT 1 COMMENT 'Whether to deploy to this server, 1=deploy 0=skip',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_pes_project FOREIGN KEY (project_id) REFERENCES project_config(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pes_env FOREIGN KEY (environment_id) REFERENCES deploy_environment(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pes_server FOREIGN KEY (server_id) REFERENCES server_info(id) ON DELETE CASCADE
 );
 
 -- Insert default system settings

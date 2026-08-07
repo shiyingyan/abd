@@ -14,6 +14,7 @@
                 <span th:if="${!isActive and taskId!=null and taskId.length()>0}" th:text="${taskId}"></span>
             </h4>
             <a th:href="@{/build}" class="btn btn-secondary btn-sm mb-2">返回</a>
+            <button id="loadMoreBtn" class="btn btn-outline-info btn-sm mb-2" style="display:none;" onclick="prependOlderLines()">加载更多</button>
             <pre class="bg-dark text-light p-3" id="logArea" style="max-height:600px;overflow-y:auto;border-radius:0.5rem;white-space:pre-wrap;word-wrap:break-word;"></pre>
         </div>
     </div>
@@ -24,25 +25,123 @@
     var taskId = '[[${task.taskId}]]';
     var logArea = document.getElementById('logArea');
     var evtSource = new EventSource('/api/build/sse/' + taskId);
+    var sseClosed = false;
+
     evtSource.onmessage = function(e) {
         logArea.innerHTML += e.data + '\n';
         logArea.scrollTop = logArea.scrollHeight;
     };
-    evtSource.onerror = function() { evtSource.close(); };
+
+    evtSource.onerror = function() {
+        if (sseClosed) return;
+        sseClosed = true;
+        evtSource.close();
+        // Build likely completed — switch to file-based log
+        logArea.innerHTML += '\n[构建已结束，正在加载完整日志...]\n';
+        loadFullLogFrom();
+    };
+
+    function loadFullLogFrom() {
+        var tailSize = 2000;
+        fetch('/api/build/log-content/' + taskId + '?tailLines=' + tailSize)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                logArea.textContent = data.content || '';
+                logArea.scrollTop = logArea.scrollHeight;
+                if (data.hasMore) {
+                    var btn = document.getElementById('loadMoreBtn');
+                    btn.style.display = '';
+                    btn.textContent = '加载更多 (共 ' + (data.totalLines || 0) + ' 行)';
+                }
+            })
+            .catch(function() {
+                logArea.innerHTML += '[加载完整日志失败]\n';
+            });
+    }
+
+    var logTailSize = 2000;
+    function prependOlderLines() {
+        var btn = document.getElementById('loadMoreBtn');
+        if (btn) btn.textContent = '加载中...';
+        logTailSize += 2000;
+        fetch('/api/build/log-content/' + taskId + '?tailLines=' + logTailSize)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.content) {
+                    var oldContent = logArea.textContent;
+                    var newContent = data.content;
+                    if (oldContent && newContent.endsWith(oldContent)) {
+                        var prefix = newContent.substring(0, newContent.length - oldContent.length);
+                        logArea.textContent = prefix + oldContent;
+                    } else {
+                        logArea.textContent = newContent;
+                    }
+                    if (data.hasMore) {
+                        btn.textContent = '加载更多 (共 ' + (data.totalLines || 0) + ' 行)';
+                    } else {
+                        btn.style.display = 'none';
+                    }
+                }
+            })
+            .catch(function() {
+                if (btn) btn.textContent = '加载失败';
+            });
+    }
 </script>
 <script th:if="${!isActive and taskId!=null and taskId.length()>0}">
-    // Completed/evicted task: load log from file
+    // Completed/evicted task: load last N lines from file, with "load more"
     var logArea = document.getElementById('logArea');
     logArea.textContent = '正在加载日志...';
-    fetch('/api/build/log-content/[[${taskId}]]')
+    var logHasMore = false;
+    var logTotalLines = 0;
+    var logTailSize = 500;
+
+    function prependOlderLines() {
+        var btn = document.getElementById('loadMoreBtn');
+        if (btn) btn.textContent = '加载中...';
+        logTailSize += 500;
+        fetch('/api/build/log-content/[[${taskId}]]?tailLines=' + logTailSize)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.content) {
+                    var oldContent = logArea.textContent;
+                    var newContent = data.content;
+                    // Only prepend the part that's new (not already shown)
+                    if (oldContent && newContent.endsWith(oldContent)) {
+                        var prefix = newContent.substring(0, newContent.length - oldContent.length);
+                        logArea.textContent = prefix + oldContent;
+                    } else {
+                        logArea.textContent = newContent;
+                    }
+                    logHasMore = data.hasMore;
+                    logTotalLines = data.totalLines || 0;
+                    updateLoadMoreBtn();
+                }
+            })
+            .catch(function() {
+                if (btn) btn.textContent = '加载失败';
+            });
+    }
+
+    function updateLoadMoreBtn() {
+        var btn = document.getElementById('loadMoreBtn');
+        if (!btn) return;
+        if (logHasMore) {
+            btn.style.display = '';
+            btn.textContent = '加载更多 (共 ' + logTotalLines + ' 行)';
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+
+    fetch('/api/build/log-content/[[${taskId}]]?tailLines=500')
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            if (data.success) {
-                logArea.textContent = data.content;
-            } else {
-                logArea.textContent = data.content;
-            }
+            logArea.textContent = data.content || '';
+            logHasMore = data.hasMore;
+            logTotalLines = data.totalLines || 0;
             logArea.scrollTop = logArea.scrollHeight;
+            updateLoadMoreBtn();
         })
         .catch(function() {
             logArea.textContent = '加载日志失败';

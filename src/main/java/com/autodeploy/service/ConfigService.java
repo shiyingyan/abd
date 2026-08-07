@@ -1,7 +1,9 @@
 package com.autodeploy.service;
 
 import com.autodeploy.model.ProjectConfig;
+import com.autodeploy.model.ProjectEnvServer;
 import com.autodeploy.repository.ConfigRepository;
+import com.autodeploy.repository.ProjectEnvServerRepository;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,31 +21,66 @@ import java.util.List;
 @Service
 public class ConfigService {
 
-    private static final Logger log = LoggerFactory.getLogger(ConfigService.class);
+  private static final Logger log = LoggerFactory.getLogger(ConfigService.class);
 
-    @Autowired
-    private ConfigRepository configRepository;
+  @Autowired private ConfigRepository configRepository;
+
+  @Autowired private ProjectEnvServerRepository projectEnvServerRepository;
+
+  /** List all project configs. */
+  public List<ProjectConfig> listAll() {
+    return configRepository.selectList(new QueryWrapper<ProjectConfig>().orderByDesc("updated_at"));
+  }
+
+  /** Get a config by ID. */
+  public ProjectConfig getById(Long id) {
+    return configRepository.selectById(id);
+  }
+
+  /** Get a config by project name. */
+  public ProjectConfig getByProjectName(String projectName) {
+    return configRepository.selectOne(
+        new QueryWrapper<ProjectConfig>().eq("project_name", projectName));
+  }
 
     /**
-     * List all project configs.
+     * Save config and env-server associations in one transaction.
+     * envServerPairs is a list of long[]{environmentId, serverId}.
+     * For new configs: saves config first, then adds associations.
+     * For existing configs: replaces all associations with the new set.
      */
-    public List<ProjectConfig> listAll() {
-        return configRepository.selectList(new QueryWrapper<ProjectConfig>().orderByDesc("updated_at"));
+    @Transactional
+    public String saveWithEnvServers(ProjectConfig config, List<long[]> envServerPairs) {
+        String error = save(config);
+        if (error != null) {
+            return error;
+        }
+        if (envServerPairs != null && !envServerPairs.isEmpty()) {
+            replaceEnvServers(config.getId(), envServerPairs);
+        }
+        return null;
     }
 
     /**
-     * Get a config by ID.
+     * Replace all env-server associations for a project.
+     * Deletes existing associations and inserts new ones.
      */
-    public ProjectConfig getById(Long id) {
-        return configRepository.selectById(id);
-    }
-
-    /**
-     * Get a config by project name.
-     */
-    public ProjectConfig getByProjectName(String projectName) {
-        return configRepository.selectOne(
-                new QueryWrapper<ProjectConfig>().eq("project_name", projectName));
+    @Transactional
+    public void replaceEnvServers(Long projectId, List<long[]> pairs) {
+        projectEnvServerRepository.delete(
+                new QueryWrapper<ProjectEnvServer>().eq("project_id", projectId));
+        LocalDateTime now = LocalDateTime.now();
+        for (long[] pair : pairs) {
+            if (pair.length < 2) continue;
+            ProjectEnvServer pes = new ProjectEnvServer();
+            pes.setProjectId(projectId);
+            pes.setEnvironmentId(pair[0]);
+            pes.setServerId(pair[1]);
+            pes.setDeployEnabled(true);
+            pes.setCreatedAt(now);
+            projectEnvServerRepository.insert(pes);
+        }
+        log.info("Replaced env-server associations for project {}: {} pairs", projectId, pairs.size());
     }
 
     /**
@@ -87,14 +124,12 @@ public class ConfigService {
         return null;
     }
 
-    /**
-     * Delete a config by ID.
-     */
-    @Transactional
-    public void delete(Long id) {
-        configRepository.deleteById(id);
-        log.info("Deleted project config id={}", id);
-    }
+  /** Delete a config by ID. */
+  @Transactional
+  public void delete(Long id) {
+    configRepository.deleteById(id);
+    log.info("Deleted project config id={}", id);
+  }
 
     /**
      * Create a snapshot of the current config for build task isolation.
@@ -130,6 +165,8 @@ public class ConfigService {
         snapshot.setProjectDir(original.getProjectDir());
         return snapshot;
     }
+
+
 
     /**
      * Generate project key as MD5 hash of projectName + version + timestamp.
@@ -168,12 +205,6 @@ public class ConfigService {
         if (config.getBuildCommand() == null || config.getBuildCommand().trim().isEmpty()) {
             errors.add("构建指令不能为空");
         }
-        if (config.getDeployServerHost() == null || config.getDeployServerHost().trim().isEmpty()) {
-            errors.add("部署服务器地址不能为空");
-        }
-        if (config.getDeployTargetPath() == null || config.getDeployTargetPath().trim().isEmpty()) {
-            errors.add("部署目标路径不能为空");
-        }
         if (config.getDeployServerPort() != null && (config.getDeployServerPort() < 1 || config.getDeployServerPort() > 65535)) {
             errors.add("SSH 端口必须在 1-65535 范围内");
         }
@@ -195,4 +226,5 @@ public class ConfigService {
         }
         return errors;
     }
+
 }

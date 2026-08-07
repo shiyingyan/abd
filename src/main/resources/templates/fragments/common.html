@@ -21,6 +21,8 @@
         <div class="collapse navbar-collapse" id="navbarNav">
             <ul class="navbar-nav me-auto">
                 <li class="nav-item"><a class="nav-link" th:href="@{/config}"><i class="bi bi-gear me-1"></i>项目配置</a></li>
+                <li class="nav-item"><a class="nav-link" th:href="@{/server}"><i class="bi bi-server me-1"></i>服务器维护</a></li>
+                <li class="nav-item"><a class="nav-link" th:href="@{/environment}"><i class="bi bi-layers me-1"></i>部署环境</a></li>
                 <li class="nav-item"><a class="nav-link" th:href="@{/build}"><i class="bi bi-hammer me-1"></i>构建管理</a></li>
                 <li class="nav-item"><a class="nav-link" th:href="@{/history}"><i class="bi bi-clock-history me-1"></i>构建历史</a></li>
                 <li class="nav-item"><a class="nav-link" th:href="@{/settings}"><i class="bi bi-sliders me-1"></i>系统设置</a></li>
@@ -39,6 +41,8 @@
 <div th:fragment="sidebar" class="col-md-2 d-none d-md-block sidebar">
     <div class="list-group list-group-flush">
         <a class="list-group-item list-group-item-action" th:href="@{/config}"><i class="bi bi-gear me-2"></i>项目配置</a>
+        <a class="list-group-item list-group-item-action" th:href="@{/server}"><i class="bi bi-server me-2"></i>服务器维护</a>
+        <a class="list-group-item list-group-item-action" th:href="@{/environment}"><i class="bi bi-layers me-2"></i>部署环境</a>
         <a class="list-group-item list-group-item-action" th:href="@{/build}"><i class="bi bi-hammer me-2"></i>构建管理</a>
         <a class="list-group-item list-group-item-action" th:href="@{/history}"><i class="bi bi-clock-history me-2"></i>构建历史</a>
         <a class="list-group-item list-group-item-action" th:href="@{/settings}"><i class="bi bi-sliders me-2"></i>系统设置</a>

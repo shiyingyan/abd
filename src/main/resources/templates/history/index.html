@@ -96,12 +96,20 @@
 <div class="modal fade" id="logModal" tabindex="-1">
     <div class="modal-dialog modal-lg"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title">构建日志</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
-        <div class="modal-body"><pre class="bg-dark text-light p-3" id="logContent" style="max-height:500px;overflow-y:auto;"></pre></div>
+        <div class="modal-body">
+            <button id="historyLoadMoreBtn" class="btn btn-outline-info btn-sm mb-2" style="display:none;" onclick="historyPrependOlderLines()">加载更多</button>
+            <pre class="bg-dark text-light p-3" id="logContent" style="max-height:500px;overflow-y:auto;"></pre>
+        </div>
     </div></div>
 </div>
 
 <th:block th:replace="fragments/common :: scripts"></th:block>
 <script>
+var currentLogId = null;
+var historyLogHasMore = false;
+var historyLogTotalLines = 0;
+var historyLogTailSize = 500;
+
 function showDetail(id) {
     $.get('/history/detail/' + id, function(data) {
         var html = '<table class="table table-sm">';
@@ -113,10 +121,52 @@ function showDetail(id) {
         new bootstrap.Modal($('#detailModal')).show();
     });
 }
+
+function updateHistoryLoadMoreBtn() {
+    var btn = document.getElementById('historyLoadMoreBtn');
+    if (!btn) return;
+    if (historyLogHasMore) {
+        btn.style.display = '';
+        btn.textContent = '加载更多 (共 ' + historyLogTotalLines + ' 行)';
+    } else {
+        btn.style.display = 'none';
+    }
+}
+
 function showLog(id) {
-    $.get('/history/log/' + id, function(data) {
-        $('#logContent').text(data.content);
-        new bootstrap.Modal($('#logModal')).show();
+    currentLogId = id;
+    historyLogTailSize = 500;
+    $('#logContent').text('正在加载日志...');
+    historyLogHasMore = false;
+    historyLogTotalLines = 0;
+    updateHistoryLoadMoreBtn();
+    $.get('/history/log/' + id + '?tailLines=' + historyLogTailSize, function(data) {
+        $('#logContent').text(data.content || '');
+        historyLogHasMore = data.hasMore;
+        historyLogTotalLines = data.totalLines || 0;
+        updateHistoryLoadMoreBtn();
+    });
+    new bootstrap.Modal($('#logModal')).show();
+}
+
+function historyPrependOlderLines() {
+    var btn = document.getElementById('historyLoadMoreBtn');
+    if (btn) btn.textContent = '加载中...';
+    historyLogTailSize += 500;
+    $.get('/history/log/' + currentLogId + '?tailLines=' + historyLogTailSize, function(data) {
+        if (data.content) {
+            var oldContent = $('#logContent').text();
+            var newContent = data.content;
+            if (oldContent && newContent.endsWith(oldContent)) {
+                var prefix = newContent.substring(0, newContent.length - oldContent.length);
+                $('#logContent').text(prefix + oldContent);
+            } else {
+                $('#logContent').text(newContent);
+            }
+            historyLogHasMore = data.hasMore;
+            historyLogTotalLines = data.totalLines || 0;
+            updateHistoryLoadMoreBtn();
+        }
     });
 }
 </script>

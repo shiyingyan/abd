@@ -25,8 +25,11 @@ spring:
 #      path: /h2-console
   sql:
     init:
-      mode: always
-      schema-locations: classpath:sql/schema.sql
+      mode: never
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
   thymeleaf:
     prefix: classpath:/templates/
     suffix: .html

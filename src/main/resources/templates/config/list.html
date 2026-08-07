@@ -25,7 +25,7 @@
                             <th>Git 仓库</th>
                             <th>分支</th>
                             <th>语言</th>
-                            <th>部署服务器</th>
+                            <th>部署环境/服务器</th>
                             <th>更新时间</th>
                             <th>操作</th>
                         </tr>
@@ -41,7 +41,18 @@
                             <td>
                                 <span th:if="${config.languageType != null}" th:text="${config.languageType + ' ' + config.languageVersion}"></span>
                             </td>
-                            <td th:text="${config.deployServerHost}"></td>
+                            <td>
+                                <div th:each="pes : ${envServerMap[config.id]}">
+                                    <span class="badge bg-info me-1" th:text="${pes.environmentName}"></span>
+                                    <small th:class="${pes.deployEnabled == null || pes.deployEnabled} ? 'text-muted' : 'text-decoration-line-through text-muted'"
+                                           th:text="${pes.serverName + ' (' + pes.serverHost + ')'}"></small>
+                                    <small th:if="${pes.deployEnabled != null && !pes.deployEnabled}" class="badge bg-secondary ms-1">跳过</small>
+                                </div>
+                                <span th:if="${envServerMap[config.id] == null or envServerMap[config.id].isEmpty()}" class="text-muted">
+                                    <small th:if="${config.deployServerHost != null}" th:text="${config.deployServerHost}"></small>
+                                    <em th:if="${config.deployServerHost == null}">未配置</em>
+                                </span>
+                            </td>
                             <td th:text="${config.updatedAt}"></td>
                             <td>
                                 <a th:href="@{/config/edit/{id}(id=${config.id})}" class="btn btn-sm btn-outline-primary">编辑</a>

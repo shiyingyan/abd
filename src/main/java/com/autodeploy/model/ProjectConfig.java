@@ -4,14 +4,13 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-
 import java.time.LocalDateTime;
 
 @TableName("project_config")
 public class ProjectConfig {
 
-    @TableId(type = IdType.AUTO)
-    private Long id;
+  @TableId(type = IdType.AUTO)
+  private Long id;
 
     @TableField("project_key")
     private String projectKey;
@@ -19,64 +18,64 @@ public class ProjectConfig {
     @TableField("project_name")
     private String projectName;
 
-    private String version;
+  private String version;
 
-    @TableField("git_repo_url")
-    private String gitRepoUrl;
+  @TableField("git_repo_url")
+  private String gitRepoUrl;
 
-    @TableField("git_branch")
-    private String gitBranch;
+  @TableField("git_branch")
+  private String gitBranch;
 
-    @TableField("git_auth_env_key")
-    private String gitAuthEnvKey;
+  @TableField("git_auth_env_key")
+  private String gitAuthEnvKey;
 
-    @TableField("build_command")
-    private String buildCommand;
+  @TableField("build_command")
+  private String buildCommand;
 
-    @TableField("build_work_dir")
-    private String buildWorkDir;
+  @TableField("build_work_dir")
+  private String buildWorkDir;
 
-    @TableField("deploy_server_host")
-    private String deployServerHost;
+  @TableField("deploy_server_host")
+  private String deployServerHost;
 
-    @TableField("deploy_server_port")
-    private Integer deployServerPort;
+  @TableField("deploy_server_port")
+  private Integer deployServerPort;
 
-    @TableField("deploy_server_user")
-    private String deployServerUser;
+  @TableField("deploy_server_user")
+  private String deployServerUser;
 
-    @TableField("deploy_auth_env_key")
-    private String deployAuthEnvKey;
+  @TableField("deploy_auth_env_key")
+  private String deployAuthEnvKey;
 
-    @TableField("deploy_target_path")
-    private String deployTargetPath;
+  @TableField("deploy_target_path")
+  private String deployTargetPath;
 
-    @TableField("deploy_source_path")
-    private String deploySourcePath;
+  @TableField("deploy_source_path")
+  private String deploySourcePath;
 
-    @TableField("start_command")
-    private String startCommand;
+  @TableField("start_command")
+  private String startCommand;
 
-    @TableField("restart_command")
-    private String restartCommand;
+  @TableField("restart_command")
+  private String restartCommand;
 
-    @TableField("language_type")
-    private String languageType;
+  @TableField("language_type")
+  private String languageType;
 
-    @TableField("language_version")
-    private String languageVersion;
+  @TableField("language_version")
+  private String languageVersion;
 
-    @TableField("custom_install_dir")
-    private String customInstallDir;
+  @TableField("custom_install_dir")
+  private String customInstallDir;
 
-    @TableField("project_dir")
-    private String projectDir;
+  @TableField("project_dir")
+  private String projectDir;
 
-    @TableField("created_at")
-    private LocalDateTime createdAt;
+  @TableField("created_at")
+  private LocalDateTime createdAt;
 
-    @TableField("updated_at")
-    private LocalDateTime updatedAt;
+  @TableField("updated_at")
+  private LocalDateTime updatedAt;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }

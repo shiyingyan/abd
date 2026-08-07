@@ -4,6 +4,8 @@
       "Bash(cd \"D:\\\\code\\\\tools\\\\auto-deploy\" && openspec new change \"auto-deploy-tool\" 2>&1)",
       "Bash(cd \"D:\\\\code\\\\tools\\\\auto-deploy\" && openspec status --change \"auto-deploy-tool\" --json 2>&1)",
       "Bash(cd \"D:\\\\code\\\\tools\\\\auto-deploy\" && openspec instructions proposal --change \"auto-deploy-tool\" --json 2>&1)",
+      "Bash(find /Users/shing/Documents/code/tools/abd -type f | head -80)"
+      "Bash(cd \"D:\\\\code\\\\tools\\\\auto-deploy\" && openspec instructions proposal --change \"auto-deploy-tool\" --json 2>&1)",
       "Bash(openspec list:*)",
       "Bash(dir /s /b /ad D:\\\\code\\\\tools\\\\auto-deploy 2>nul | head -80)"
     ]
