@@ -13,6 +13,9 @@ public class ProjectConfig {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    @TableField("project_key")
+    private String projectKey;
+
     @TableField("project_name")
     private String projectName;
 
@@ -77,6 +80,9 @@ public class ProjectConfig {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+
+    public String getProjectKey() { return projectKey; }
+    public void setProjectKey(String projectKey) { this.projectKey = projectKey; }
 
     public String getProjectName() { return projectName; }
     public void setProjectName(String projectName) { this.projectName = projectName; }

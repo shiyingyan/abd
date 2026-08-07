@@ -19,6 +19,7 @@
                     <thead>
                         <tr>
                             <th>ID</th>
+                            <th>项目标识</th>
                             <th>项目名称</th>
                             <th>版本号</th>
                             <th>Git 仓库</th>
@@ -32,6 +33,7 @@
                     <tbody>
                         <tr th:each="config : ${configs}">
                             <td th:text="${config.id}"></td>
+                            <td><code th:text="${config.projectKey}"></code></td>
                             <td th:text="${config.projectName}"></td>
                             <td th:text="${config.version}"></td>
                             <td th:text="${config.gitRepoUrl}"></td>

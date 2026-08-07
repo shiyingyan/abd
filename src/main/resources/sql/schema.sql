@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- Project config table
 CREATE TABLE IF NOT EXISTS project_config (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    project_key VARCHAR(64) NOT NULL,
     project_name VARCHAR(128) NOT NULL,
     version VARCHAR(64) NOT NULL,
     git_repo_url VARCHAR(512) NOT NULL,

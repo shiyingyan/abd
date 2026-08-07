@@ -11,6 +11,19 @@
             <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
             <form th:action="@{/config/save}" th:object="${config}" method="post" id="configForm">
                 <input type="hidden" th:field="*{id}"/>
+                <input type="hidden" th:field="*{projectKey}" id="projectKeyInput"/>
+                <div class="mb-3" th:if="${!isNew}">
+                    <label class="form-label">项目标识</label>
+                    <input type="text" class="form-control" th:field="*{projectKey}" readonly
+                           style="background-color: #e9ecef; cursor: not-allowed;"/>
+                    <div class="form-text">项目标识在创建时自动生成，保存后不可修改</div>
+                </div>
+                <div class="mb-3" th:if="${isNew}">
+                    <label class="form-label">项目标识 <small class="text-muted">（自动生成）</small></label>
+                    <input type="text" class="form-control" id="projectKeyPreview" readonly
+                           placeholder="填写项目编码和版本号后自动生成" style="background-color: #e9ecef; cursor: not-allowed;"/>
+                    <div class="form-text">项目标识根据项目编码、版本号和当前时间戳自动生成，保存后不可修改</div>
+                </div>
                 <div class="row">
                     <div class="col-md-6 mb-3">
                         <label class="form-label">项目名称 *</label>
@@ -240,6 +253,31 @@
         // Load versions on page load if language type is already selected
         if (langSelect.value) {
             loadVersions(langSelect.value);
+        }
+
+        // Update project key preview on new project form
+        var isNew = /*[[${isNew}]]*/ false;
+        if (isNew) {
+            function updateProjectKeyPreview() {
+                var projectName = $('[name="projectName"]').val() || '';
+                var version = $('[name="version"]').val() || '';
+                if (projectName && version) {
+                    var timestamp = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 14);
+                    var raw = projectName + version + timestamp;
+                    var hash = 0;
+                    for (var i = 0; i < raw.length; i++) {
+                        var char = raw.charCodeAt(i);
+                        hash = ((hash << 5) - hash) + char;
+                        hash = hash & hash;
+                    }
+                    var hexHash = Math.abs(hash).toString(16).padStart(8, '0');
+                    $('#projectKeyPreview').val(hexHash + '...（保存后生成完整标识）');
+                } else {
+                    $('#projectKeyPreview').val('');
+                }
+            }
+            $('[name="projectName"]').on('input', updateProjectKeyPreview);
+            $('[name="version"]').on('input', updateProjectKeyPreview);
         }
 
         // Form validation: language version required when language type is selected

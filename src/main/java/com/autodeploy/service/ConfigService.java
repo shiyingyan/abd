@@ -9,7 +9,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -46,6 +49,8 @@ public class ConfigService {
     /**
      * Save (insert or update) a config with field validation.
      * Config changes are immediately effective in the database.
+     * For new configs, generates a project_key from MD5(projectName+version+timestamp).
+     * Checks for duplicates by projectName+version before inserting.
      */
     @Transactional
     public String save(ProjectConfig config) {
@@ -55,11 +60,26 @@ public class ConfigService {
         }
 
         if (config.getId() == null) {
+            // New config: check for duplicates by projectName + version
+            ProjectConfig existing = configRepository.selectOne(
+                    new QueryWrapper<ProjectConfig>()
+                            .eq("project_name", config.getProjectName())
+                            .eq("version", config.getVersion()));
+            if (existing != null) {
+                return "项目编码和版本号已存在，请勿重复保存";
+            }
+            // Generate project_key
+            config.setProjectKey(generateProjectKey(config.getProjectName(), config.getVersion()));
             config.setCreatedAt(LocalDateTime.now());
             config.setUpdatedAt(LocalDateTime.now());
             configRepository.insert(config);
-            log.info("Created project config: {}", config.getProjectName());
+            log.info("Created project config: {} (key={})", config.getProjectName(), config.getProjectKey());
         } else {
+            // Existing config: do not allow projectKey to be changed
+            ProjectConfig existing = configRepository.selectById(config.getId());
+            if (existing != null && existing.getProjectKey() != null) {
+                config.setProjectKey(existing.getProjectKey());
+            }
             config.setUpdatedAt(LocalDateTime.now());
             configRepository.updateById(config);
             log.info("Updated project config: {}", config.getProjectName());
@@ -88,6 +108,7 @@ public class ConfigService {
         // Return a copy so changes to the DB don't affect the build task
         ProjectConfig snapshot = new ProjectConfig();
         snapshot.setId(original.getId());
+        snapshot.setProjectKey(original.getProjectKey());
         snapshot.setProjectName(original.getProjectName());
         snapshot.setVersion(original.getVersion());
         snapshot.setGitRepoUrl(original.getGitRepoUrl());
@@ -108,6 +129,26 @@ public class ConfigService {
         snapshot.setCustomInstallDir(original.getCustomInstallDir());
         snapshot.setProjectDir(original.getProjectDir());
         return snapshot;
+    }
+
+    /**
+     * Generate project key as MD5 hash of projectName + version + timestamp.
+     */
+    private String generateProjectKey(String projectName, String version) {
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        String raw = projectName + version + timestamp;
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] hash = md.digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            // Fallback: use hashCode if MD5 is not available
+            return Integer.toHexString(raw.hashCode());
+        }
     }
 
     /**
