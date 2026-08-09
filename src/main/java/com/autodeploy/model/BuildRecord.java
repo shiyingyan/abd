@@ -40,6 +40,21 @@ public class BuildRecord {
   @TableField("deploy_status")
   private String deployStatus;
 
+  @TableField("selected_modules")
+  private String selectedModules;
+
+  @TableField("selected_envs")
+  private String selectedEnvs;
+
+  @TableField("auto_deploy")
+  private Boolean autoDeploy;
+
+  @TableField("artifact_paths")
+  private String artifactPaths;
+
+  @TableField("build_server_host")
+  private String buildServerHost;
+
   @TableField("created_at")
   private LocalDateTime createdAt;
 
@@ -129,6 +144,46 @@ public class BuildRecord {
 
   public void setDeployStatus(String deployStatus) {
     this.deployStatus = deployStatus;
+  }
+
+  public String getSelectedModules() {
+    return selectedModules;
+  }
+
+  public void setSelectedModules(String selectedModules) {
+    this.selectedModules = selectedModules;
+  }
+
+  public String getSelectedEnvs() {
+    return selectedEnvs;
+  }
+
+  public void setSelectedEnvs(String selectedEnvs) {
+    this.selectedEnvs = selectedEnvs;
+  }
+
+  public Boolean getAutoDeploy() {
+    return autoDeploy;
+  }
+
+  public void setAutoDeploy(Boolean autoDeploy) {
+    this.autoDeploy = autoDeploy;
+  }
+
+  public String getArtifactPaths() {
+    return artifactPaths;
+  }
+
+  public void setArtifactPaths(String artifactPaths) {
+    this.artifactPaths = artifactPaths;
+  }
+
+  public String getBuildServerHost() {
+    return buildServerHost;
+  }
+
+  public void setBuildServerHost(String buildServerHost) {
+    this.buildServerHost = buildServerHost;
   }
 
   public LocalDateTime getCreatedAt() {

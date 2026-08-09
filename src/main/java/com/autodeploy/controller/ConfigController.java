@@ -5,6 +5,7 @@ import com.autodeploy.model.ProjectEnvServer;
 import com.autodeploy.service.ConfigService;
 import com.autodeploy.service.DeployEnvironmentService;
 import com.autodeploy.service.DeployService;
+import com.autodeploy.service.ModuleScanService;
 import com.autodeploy.service.ServerInfoService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -32,6 +33,8 @@ public class ConfigController {
   @Autowired private ServerInfoService serverInfoService;
 
   @Autowired private DeployEnvironmentService environmentService;
+
+  @Autowired private ModuleScanService moduleScanService;
 
   @Autowired private ObjectMapper objectMapper;
 
@@ -91,6 +94,13 @@ public class ConfigController {
         model.addAttribute("projectEnvServers", java.util.Collections.emptyList());
       }
       return "config/edit";
+    }
+    // Auto-trigger module scan after successful save (for non-NODE projects with git repo)
+    if (config.getId() != null
+        && !"NODE".equals(config.getLanguageType())
+        && config.getGitRepoUrl() != null
+        && !config.getGitRepoUrl().trim().isEmpty()) {
+      moduleScanService.startScan(config.getId());
     }
     return "redirect:/config/edit/" + config.getId();
   }
@@ -205,13 +215,39 @@ public class ConfigController {
     return ResponseEntity.ok(result);
   }
 
+  // ===== Module scan API =====
+
+  @PostMapping("/api/config/{projectId}/scan-modules")
+  @ResponseBody
+  public ResponseEntity<Map<String, Object>> scanModules(@PathVariable Long projectId) {
+    Map<String, Object> result = new HashMap<>();
+    String error = moduleScanService.startScan(projectId);
+    if (error != null) {
+      result.put("success", false);
+      result.put("message", error);
+    } else {
+      result.put("success", true);
+      result.put("message", "扫描已启动");
+    }
+    return ResponseEntity.ok(result);
+  }
+
+  @GetMapping("/api/config/{projectId}/modules")
+  @ResponseBody
+  public ResponseEntity<Map<String, Object>> getModules(@PathVariable Long projectId) {
+    Map<String, Object> result = moduleScanService.getScanStatus(projectId);
+    result.put("modules", moduleScanService.listModules(projectId));
+    return ResponseEntity.ok(result);
+  }
+
   private List<long[]> parseEnvServersJson(String json) {
     List<long[]> pairs = new ArrayList<>();
     if (json == null || json.trim().isEmpty()) {
       return pairs;
     }
     try {
-      List<List<Long>> parsed = objectMapper.readValue(json, new TypeReference<List<List<Long>>>() {});
+      List<List<Long>> parsed =
+          objectMapper.readValue(json, new TypeReference<List<List<Long>>>() {});
       for (List<Long> pair : parsed) {
         if (pair.size() >= 2 && pair.get(0) != null && pair.get(1) != null) {
           pairs.add(new long[] {pair.get(0), pair.get(1)});

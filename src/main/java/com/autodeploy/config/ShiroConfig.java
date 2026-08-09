@@ -3,9 +3,9 @@ package com.autodeploy.config;
 import javax.servlet.DispatcherType;
 import javax.servlet.Filter;
 import org.apache.shiro.authc.credential.HashedCredentialsMatcher;
+import org.apache.shiro.spring.web.ShiroFilterFactoryBean;
 import org.apache.shiro.spring.web.config.DefaultShiroFilterChainDefinition;
 import org.apache.shiro.spring.web.config.ShiroFilterChainDefinition;
-import org.apache.shiro.spring.web.ShiroFilterFactoryBean;
 import org.apache.shiro.web.mgt.DefaultWebSecurityManager;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -50,8 +50,8 @@ public class ShiroConfig {
 
   /**
    * Register Shiro filter with ASYNC dispatcher type support. This ensures the Shiro
-   * SecurityManager is bound to the thread during SSE async dispatches, preventing
-   * "No SecurityManager accessible" errors.
+   * SecurityManager is bound to the thread during SSE async dispatches, preventing "No
+   * SecurityManager accessible" errors.
    */
   @Bean
   public FilterRegistrationBean<Filter> shiroFilterRegistration(

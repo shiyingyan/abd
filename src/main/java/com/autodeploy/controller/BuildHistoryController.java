@@ -4,7 +4,6 @@ import com.autodeploy.model.BuildRecord;
 import com.autodeploy.service.BuildHistoryService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -51,8 +50,7 @@ public class BuildHistoryController {
   @GetMapping("/history/log/{id}")
   @ResponseBody
   public ResponseEntity<Map<String, Object>> getLog(
-      @PathVariable Long id,
-      @RequestParam(defaultValue = "500") int tailLines) {
+      @PathVariable Long id, @RequestParam(defaultValue = "500") int tailLines) {
     Map<String, Object> result = historyService.getLogContentTail(id, tailLines);
     return ResponseEntity.ok(result);
   }

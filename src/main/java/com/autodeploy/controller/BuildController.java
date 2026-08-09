@@ -4,6 +4,7 @@ import com.autodeploy.model.BuildTask;
 import com.autodeploy.service.BuildHistoryService;
 import com.autodeploy.service.BuildService;
 import com.autodeploy.service.ConfigService;
+import com.autodeploy.service.DeployScriptService;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,6 +23,7 @@ public class BuildController {
   @Autowired private BuildService buildService;
   @Autowired private BuildHistoryService buildHistoryService;
   @Autowired private ConfigService configService;
+  @Autowired private DeployScriptService deployScriptService;
 
   @GetMapping("/build")
   public String buildPage(Model model) {
@@ -34,9 +36,14 @@ public class BuildController {
   public String startBuild(
       @RequestParam Long configId,
       @RequestParam(defaultValue = "LOCAL") String buildMode,
+      @RequestParam(required = false) List<String> modulePaths,
+      @RequestParam(required = false) List<Long> envIds,
+      @RequestParam(required = false) String autoDeploy,
       Model model) {
     String username = (String) SecurityUtils.getSubject().getPrincipal();
-    String taskId = buildService.startBuild(configId, buildMode, username);
+    boolean auto = !"false".equalsIgnoreCase(autoDeploy);
+    String taskId =
+        buildService.startBuild(configId, buildMode, username, modulePaths, envIds, auto);
     if (taskId == null) {
       model.addAttribute("error", "项目配置不存在");
     } else {
@@ -91,14 +98,45 @@ public class BuildController {
   @GetMapping("/api/build/log-content/{taskId}")
   @ResponseBody
   public ResponseEntity<Map<String, Object>> getLogContent(
-      @PathVariable String taskId,
-      @RequestParam(defaultValue = "500") int tailLines) {
+      @PathVariable String taskId, @RequestParam(defaultValue = "500") int tailLines) {
     Map<String, Object> result = buildService.readLogFileTail(taskId, tailLines);
     if (result.get("content") == null) {
       result.put("content", "日志文件未找到");
       result.put("hasMore", false);
       result.put("totalLines", 0);
     }
+    return ResponseEntity.ok(result);
+  }
+
+  /** Generate deployment script for manual deployment. */
+  @GetMapping("/api/build/deploy-script/{taskId}")
+  @ResponseBody
+  public ResponseEntity<Map<String, Object>> getDeployScript(
+      @PathVariable String taskId, @RequestParam(defaultValue = "windows") String os) {
+    BuildTask task = buildService.getTask(taskId);
+    Map<String, Object> result = new HashMap<>();
+    if (task == null) {
+      result.put("success", false);
+      result.put("message", "任务不存在");
+      return ResponseEntity.badRequest().body(result);
+    }
+    if (!"REMOTE".equals(task.getBuildMode())
+        || task.getAutoDeploy() == null
+        || task.getAutoDeploy()) {
+      result.put("success", false);
+      result.put("message", "仅远程构建且未自动部署的任务可生成部署脚本");
+      return ResponseEntity.badRequest().body(result);
+    }
+    String script = deployScriptService.generate(task, os);
+    result.put("success", true);
+    result.put("script", script);
+    result.put(
+        "filename",
+        "deploy_"
+            + task.getConfigSnapshot().getProjectName()
+            + "_"
+            + taskId
+            + ("windows".equals(os) ? ".bat" : ".sh"));
     return ResponseEntity.ok(result);
   }
 }

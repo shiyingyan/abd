@@ -12,11 +12,11 @@ public class ProjectConfig {
   @TableId(type = IdType.AUTO)
   private Long id;
 
-    @TableField("project_key")
-    private String projectKey;
+  @TableField("project_key")
+  private String projectKey;
 
-    @TableField("project_name")
-    private String projectName;
+  @TableField("project_name")
+  private String projectName;
 
   private String version;
 
@@ -71,78 +71,237 @@ public class ProjectConfig {
   @TableField("project_dir")
   private String projectDir;
 
+  @TableField("install_dir")
+  private String installDir;
+
+  @TableField("script_dir")
+  private String scriptDir;
+
+  @TableField("last_module_scan_at")
+  private LocalDateTime lastModuleScanAt;
+
+  @TableField("last_module_scan_msg")
+  private String lastModuleScanMsg;
+
   @TableField("created_at")
   private LocalDateTime createdAt;
 
   @TableField("updated_at")
   private LocalDateTime updatedAt;
 
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
+  public Long getId() {
+    return id;
+  }
 
-    public String getProjectKey() { return projectKey; }
-    public void setProjectKey(String projectKey) { this.projectKey = projectKey; }
+  public void setId(Long id) {
+    this.id = id;
+  }
 
-    public String getProjectName() { return projectName; }
-    public void setProjectName(String projectName) { this.projectName = projectName; }
+  public String getProjectKey() {
+    return projectKey;
+  }
 
-    public String getVersion() { return version; }
-    public void setVersion(String version) { this.version = version; }
+  public void setProjectKey(String projectKey) {
+    this.projectKey = projectKey;
+  }
 
-    public String getGitRepoUrl() { return gitRepoUrl; }
-    public void setGitRepoUrl(String gitRepoUrl) { this.gitRepoUrl = gitRepoUrl; }
+  public String getProjectName() {
+    return projectName;
+  }
 
-    public String getGitBranch() { return gitBranch; }
-    public void setGitBranch(String gitBranch) { this.gitBranch = gitBranch; }
+  public void setProjectName(String projectName) {
+    this.projectName = projectName;
+  }
 
-    public String getGitAuthEnvKey() { return gitAuthEnvKey; }
-    public void setGitAuthEnvKey(String gitAuthEnvKey) { this.gitAuthEnvKey = gitAuthEnvKey; }
+  public String getVersion() {
+    return version;
+  }
 
-    public String getBuildCommand() { return buildCommand; }
-    public void setBuildCommand(String buildCommand) { this.buildCommand = buildCommand; }
+  public void setVersion(String version) {
+    this.version = version;
+  }
 
-    public String getBuildWorkDir() { return buildWorkDir; }
-    public void setBuildWorkDir(String buildWorkDir) { this.buildWorkDir = buildWorkDir; }
+  public String getGitRepoUrl() {
+    return gitRepoUrl;
+  }
 
-    public String getDeployServerHost() { return deployServerHost; }
-    public void setDeployServerHost(String deployServerHost) { this.deployServerHost = deployServerHost; }
+  public void setGitRepoUrl(String gitRepoUrl) {
+    this.gitRepoUrl = gitRepoUrl;
+  }
 
-    public Integer getDeployServerPort() { return deployServerPort; }
-    public void setDeployServerPort(Integer deployServerPort) { this.deployServerPort = deployServerPort; }
+  public String getGitBranch() {
+    return gitBranch;
+  }
 
-    public String getDeployServerUser() { return deployServerUser; }
-    public void setDeployServerUser(String deployServerUser) { this.deployServerUser = deployServerUser; }
+  public void setGitBranch(String gitBranch) {
+    this.gitBranch = gitBranch;
+  }
 
-    public String getDeployAuthEnvKey() { return deployAuthEnvKey; }
-    public void setDeployAuthEnvKey(String deployAuthEnvKey) { this.deployAuthEnvKey = deployAuthEnvKey; }
+  public String getGitAuthEnvKey() {
+    return gitAuthEnvKey;
+  }
 
-    public String getDeployTargetPath() { return deployTargetPath; }
-    public void setDeployTargetPath(String deployTargetPath) { this.deployTargetPath = deployTargetPath; }
+  public void setGitAuthEnvKey(String gitAuthEnvKey) {
+    this.gitAuthEnvKey = gitAuthEnvKey;
+  }
 
-    public String getDeploySourcePath() { return deploySourcePath; }
-    public void setDeploySourcePath(String deploySourcePath) { this.deploySourcePath = deploySourcePath; }
+  public String getBuildCommand() {
+    return buildCommand;
+  }
 
-    public String getStartCommand() { return startCommand; }
-    public void setStartCommand(String startCommand) { this.startCommand = startCommand; }
+  public void setBuildCommand(String buildCommand) {
+    this.buildCommand = buildCommand;
+  }
 
-    public String getRestartCommand() { return restartCommand; }
-    public void setRestartCommand(String restartCommand) { this.restartCommand = restartCommand; }
+  public String getBuildWorkDir() {
+    return buildWorkDir;
+  }
 
-    public String getLanguageType() { return languageType; }
-    public void setLanguageType(String languageType) { this.languageType = languageType; }
+  public void setBuildWorkDir(String buildWorkDir) {
+    this.buildWorkDir = buildWorkDir;
+  }
 
-    public String getLanguageVersion() { return languageVersion; }
-    public void setLanguageVersion(String languageVersion) { this.languageVersion = languageVersion; }
+  public String getDeployServerHost() {
+    return deployServerHost;
+  }
 
-    public String getCustomInstallDir() { return customInstallDir; }
-    public void setCustomInstallDir(String customInstallDir) { this.customInstallDir = customInstallDir; }
+  public void setDeployServerHost(String deployServerHost) {
+    this.deployServerHost = deployServerHost;
+  }
 
-    public String getProjectDir() { return projectDir; }
-    public void setProjectDir(String projectDir) { this.projectDir = projectDir; }
+  public Integer getDeployServerPort() {
+    return deployServerPort;
+  }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+  public void setDeployServerPort(Integer deployServerPort) {
+    this.deployServerPort = deployServerPort;
+  }
 
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+  public String getDeployServerUser() {
+    return deployServerUser;
+  }
+
+  public void setDeployServerUser(String deployServerUser) {
+    this.deployServerUser = deployServerUser;
+  }
+
+  public String getDeployAuthEnvKey() {
+    return deployAuthEnvKey;
+  }
+
+  public void setDeployAuthEnvKey(String deployAuthEnvKey) {
+    this.deployAuthEnvKey = deployAuthEnvKey;
+  }
+
+  public String getDeployTargetPath() {
+    return deployTargetPath;
+  }
+
+  public void setDeployTargetPath(String deployTargetPath) {
+    this.deployTargetPath = deployTargetPath;
+  }
+
+  public String getDeploySourcePath() {
+    return deploySourcePath;
+  }
+
+  public void setDeploySourcePath(String deploySourcePath) {
+    this.deploySourcePath = deploySourcePath;
+  }
+
+  public String getStartCommand() {
+    return startCommand;
+  }
+
+  public void setStartCommand(String startCommand) {
+    this.startCommand = startCommand;
+  }
+
+  public String getRestartCommand() {
+    return restartCommand;
+  }
+
+  public void setRestartCommand(String restartCommand) {
+    this.restartCommand = restartCommand;
+  }
+
+  public String getLanguageType() {
+    return languageType;
+  }
+
+  public void setLanguageType(String languageType) {
+    this.languageType = languageType;
+  }
+
+  public String getLanguageVersion() {
+    return languageVersion;
+  }
+
+  public void setLanguageVersion(String languageVersion) {
+    this.languageVersion = languageVersion;
+  }
+
+  public String getCustomInstallDir() {
+    return customInstallDir;
+  }
+
+  public void setCustomInstallDir(String customInstallDir) {
+    this.customInstallDir = customInstallDir;
+  }
+
+  public String getProjectDir() {
+    return projectDir;
+  }
+
+  public void setProjectDir(String projectDir) {
+    this.projectDir = projectDir;
+  }
+
+  public String getInstallDir() {
+    return installDir;
+  }
+
+  public void setInstallDir(String installDir) {
+    this.installDir = installDir;
+  }
+
+  public String getScriptDir() {
+    return scriptDir;
+  }
+
+  public void setScriptDir(String scriptDir) {
+    this.scriptDir = scriptDir;
+  }
+
+  public LocalDateTime getLastModuleScanAt() {
+    return lastModuleScanAt;
+  }
+
+  public void setLastModuleScanAt(LocalDateTime lastModuleScanAt) {
+    this.lastModuleScanAt = lastModuleScanAt;
+  }
+
+  public String getLastModuleScanMsg() {
+    return lastModuleScanMsg;
+  }
+
+  public void setLastModuleScanMsg(String lastModuleScanMsg) {
+    this.lastModuleScanMsg = lastModuleScanMsg;
+  }
+
+  public LocalDateTime getCreatedAt() {
+    return createdAt;
+  }
+
+  public void setCreatedAt(LocalDateTime createdAt) {
+    this.createdAt = createdAt;
+  }
+
+  public LocalDateTime getUpdatedAt() {
+    return updatedAt;
+  }
+
+  public void setUpdatedAt(LocalDateTime updatedAt) {
+    this.updatedAt = updatedAt;
+  }
 }

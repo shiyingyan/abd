@@ -71,6 +71,18 @@
                                placeholder="如 src/main"/>
                     </div>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label">构建产物路径
+                        <i class="bi bi-question-circle ad-help-icon" data-bs-toggle="tooltip" data-bs-placement="right"
+                           title="留空时按语言类型在每个模块内自动发现产物；填写时作为正则表达式，在每个模块的子目录路径中匹配"></i>
+                    </label>
+                    <input type="text" class="form-control" th:field="*{deploySourcePath}"
+                           placeholder="正则表达式，如 .*service.*\.jar 或 target/.*\.jar$"/>
+                    <div class="form-text">
+                        留空时系统按语言类型在每个模块内自动发现产物（Java 取 target 下的 jar，Node 取 dist 目录，Go 取可执行文件）。
+                        填写时作为正则表达式，在每个模块的子目录路径中匹配。
+                    </div>
+                </div>
                 <div class="row">
                     <div class="col-md-4 mb-3">
                         <label class="form-label">语言类型 <span class="text-danger">*</span></label>
@@ -105,23 +117,36 @@
                 </div>
                 <hr/>
                 <h6>部署配置</h6>
-                <div class="mb-3">
-                    <label class="form-label">部署目标路径</label>
-                    <input type="text" class="form-control" th:field="*{deployTargetPath}"
-                           placeholder="/opt/apps/myapp/"/>
-                    <div class="form-text">
-                        留空时使用服务器默认路径。指定后，所有关联服务器都使用此路径。
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">项目安装目录
+                            <i class="bi bi-question-circle ad-help-icon" data-bs-toggle="tooltip" data-bs-placement="right"
+                               title="部署服务器上的项目根目录，所有部署路径以此为基准"></i>
+                        </label>
+                        <input type="text" class="form-control" th:field="*{installDir}"
+                               placeholder="/opt/apps/myapp"/>
+                        <div class="form-text">部署服务器上的项目安装根目录。留空时使用部署目标路径作为绝对路径。</div>
                     </div>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">构建产物路径</label>
-                    <input type="text" class="form-control" th:field="*{deploySourcePath}"
-                           placeholder="相对于项目根目录，如 target、dist"/>
-                    <div class="form-text">
-                        指定构建后需要部署的产物目录（相对于项目根目录）。留空时系统根据语言类型自动推断：Java 取 target 目录下的 jar 文件，Node 取 dist 目录，Go 取项目根目录下的可执行文件，Python 取项目根目录。
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">部署目标路径
+                            <i class="bi bi-question-circle ad-help-icon" data-bs-toggle="tooltip" data-bs-placement="right"
+                               title="相对于安装目录的路径，最终部署路径 = 安装目录 + 部署目标路径"></i>
+                        </label>
+                        <input type="text" class="form-control" th:field="*{deployTargetPath}"
+                               placeholder="lib 或留空"/>
+                        <div class="form-text">相对于安装目录的路径。最终部署路径 = 安装目录 + 部署目标路径。</div>
                     </div>
                 </div>
                 <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">执行脚本目录
+                            <i class="bi bi-question-circle ad-help-icon" data-bs-toggle="tooltip" data-bs-placement="right"
+                               title="启动/重启脚本所在目录，相对于项目安装目录，执行命令时会先 cd 到此目录"></i>
+                        </label>
+                        <input type="text" class="form-control" th:field="*{scriptDir}"
+                               placeholder="bin 或 scripts（相对于项目安装目录）"/>
+                        <div class="form-text">启动/重启命令的工作目录，<strong>相对于项目安装目录</strong>（如 <code>bin</code>）。留空则不切换目录。</div>
+                    </div>
                     <div class="col-md-6 mb-3">
                         <label class="form-label">启动命令
                             <small class="text-muted">（可选）</small>
@@ -129,12 +154,37 @@
                         <input type="text" class="form-control" th:field="*{startCommand}"
                                placeholder="留空表示不需要启动"/>
                     </div>
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">重启命令
-                            <small class="text-muted">（可选）</small>
-                        </label>
-                        <input type="text" class="form-control" th:field="*{restartCommand}"
-                               placeholder="留空表示不需要重启"/>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">重启命令
+                        <small class="text-muted">（可选）</small>
+                    </label>
+                    <input type="text" class="form-control" th:field="*{restartCommand}"
+                           placeholder="留空表示不需要重启"/>
+                </div>
+
+                <!-- Module Scan Section (non-NODE projects only) -->
+                <div class="mb-3" th:if="${!isNew and config.languageType != 'NODE'}">
+                    <hr/>
+                    <h6>模块扫描</h6>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div>
+                                    <span class="text-muted">最近扫描：</span>
+                                    <span id="lastScanInfo" th:text="${config.lastModuleScanAt != null ? config.lastModuleScanAt + ' - ' + config.lastModuleScanMsg : '尚未扫描'}">尚未扫描</span>
+                                </div>
+                                <button type="button" class="btn btn-outline-primary btn-sm" id="scanModulesBtn">
+                                    <i class="bi bi-arrow-repeat me-1"></i>扫描模块
+                                </button>
+                            </div>
+                            <div class="form-text mb-2">
+                                扫描项目的模块结构（如 Maven 多模块）。保存配置后自动扫描，也可手动触发重新扫描。
+                            </div>
+                            <div id="moduleTree" class="border rounded p-2" style="max-height:200px;overflow-y:auto;background-color:#f8f9fa;">
+                                <span class="text-muted">加载中...</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -384,6 +434,99 @@
 
     $('#configForm').on('submit', function() {
         syncEnvServersInput();
+    });
+
+    // ===== Module Scan =====
+    var configIdForScan = /*[[${config.id}]]*/ null;
+    var scanPollingTimer = null;
+
+    function loadModules() {
+        if (!configIdForScan) return;
+        $.get('/api/config/' + configIdForScan + '/modules', function(data) {
+            var tree = $('#moduleTree');
+            var lastScanInfo = $('#lastScanInfo');
+
+            // Update scan status
+            if (data.lastScanAt) {
+                lastScanInfo.text(data.lastScanAt + ' - ' + (data.lastScanMsg || ''));
+            }
+
+            // Render module tree
+            if (data.scanning) {
+                tree.html('<span class="text-muted"><i class="bi bi-arrow-repeat spin me-1"></i>扫描中...</span>');
+                // Continue polling
+                if (!scanPollingTimer) {
+                    scanPollingTimer = setInterval(loadModules, 2000);
+                }
+                return;
+            }
+
+            // Stop polling if was scanning
+            if (scanPollingTimer) {
+                clearInterval(scanPollingTimer);
+                scanPollingTimer = null;
+            }
+
+            if (!data.modules || data.modules.length === 0) {
+                tree.html('<span class="text-muted">未扫描到模块。点击"扫描模块"按钮开始扫描。</span>');
+                return;
+            }
+
+            var html = '';
+            data.modules.forEach(function(m) {
+                var depth = (m.moduleKey.match(/\//g) || []).length;
+                var indent = depth * 20;
+                var icon = m.parentModuleKey ? 'bi-file-earmark' : 'bi-folder';
+                html += '<div style="padding-left:' + indent + 'px;">' +
+                    '<i class="bi ' + icon + ' me-1"></i>' +
+                    '<strong>' + m.moduleName + '</strong>' +
+                    ' <small class="text-muted">(' + m.modulePath + ')</small>' +
+                    '</div>';
+            });
+            tree.html(html);
+        }).fail(function() {
+            $('#moduleTree').html('<span class="text-danger">加载模块失败</span>');
+        });
+    }
+
+    $('#scanModulesBtn').click(function() {
+        if (!configIdForScan) return;
+        var btn = $(this);
+        btn.prop('disabled', true).html('<i class="bi bi-arrow-repeat spin me-1"></i>扫描中...');
+        $.post('/api/config/' + configIdForScan + '/scan-modules', function(data) {
+            if (data.success) {
+                loadModules();
+            } else {
+                alert(data.message || '扫描启动失败');
+                btn.prop('disabled', false).html('<i class="bi bi-arrow-repeat me-1"></i>扫描模块');
+            }
+        }).fail(function() {
+            alert('扫描请求失败');
+            btn.prop('disabled', false).html('<i class="bi bi-arrow-repeat me-1"></i>扫描模块');
+        });
+    });
+
+    // Re-enable scan button when scan completes
+    function checkScanComplete() {
+        if (!configIdForScan) return;
+        $.get('/api/config/' + configIdForScan + '/modules', function(data) {
+            if (!data.scanning) {
+                $('#scanModulesBtn').prop('disabled', false).html('<i class="bi bi-arrow-repeat me-1"></i>扫描模块');
+                if (scanPollingTimer) {
+                    clearInterval(scanPollingTimer);
+                    scanPollingTimer = null;
+                }
+            }
+        });
+    }
+
+    $(document).ready(function() {
+        // Load modules on page load for non-NODE projects
+        var langType = /*[[${config.languageType}]]*/ '';
+        var isNew = /*[[${isNew}]]*/ false;
+        if (!isNew && langType !== 'NODE' && configIdForScan) {
+            loadModules();
+        }
     });
 </script>
 </body>

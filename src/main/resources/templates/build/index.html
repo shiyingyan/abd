@@ -14,22 +14,64 @@
             <div class="card mb-3">
                 <div class="card-header">发起构建</div>
                 <div class="card-body">
-                    <form th:action="@{/build/start}" method="post" class="row g-2 align-items-end">
-                        <div class="col-md-4">
-                            <label class="form-label">选择项目</label>
-                            <select name="configId" class="form-select" required>
-                                <option value="">--选择--</option>
-                                <option th:each="c : ${configs}" th:value="${c.id}" th:text="${c.projectName + ' v' + c.version}"></option>
-                            </select>
+                    <form th:action="@{/build/start}" method="post" id="buildForm">
+                        <div class="row g-3">
+                            <!-- Project select -->
+                            <div class="col-md-4">
+                                <label class="form-label">选择项目 *</label>
+                                <select name="configId" class="form-select" id="configSelect" required>
+                                    <option value="">--选择--</option>
+                                    <option th:each="c : ${configs}" th:value="${c.id}" 
+                                            th:text="${c.projectName + ' v' + c.version}"
+                                            th:data-lang="${c.languageType}"></option>
+                                </select>
+                            </div>
+                            <!-- Build mode -->
+                            <div class="col-md-3">
+                                <label class="form-label">构建模式</label>
+                                <select name="buildMode" class="form-select" id="buildModeSelect">
+                                    <option value="LOCAL">本机构建</option>
+                                    <option value="REMOTE">远程构建服务器</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="col-md-3">
-                            <label class="form-label">构建模式</label>
-                            <select name="buildMode" class="form-select">
-                                <option value="LOCAL">本机构建</option>
-                                <option value="REMOTE">远程构建服务器</option>
-                            </select>
+
+                        <!-- Module selection (non-NODE projects) -->
+                        <div class="mt-3" id="moduleSection" style="display:none;">
+                            <label class="form-label">选择部署模块 <small class="text-muted">(多选，默认全选)</small></label>
+                            <div id="moduleList" class="border rounded p-2" style="max-height:200px;overflow-y:auto;background-color:#f8f9fa;">
+                                <span class="text-muted">请先选择项目</span>
+                            </div>
+                            <div class="mt-1">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="selectAllModules">全选</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="clearAllModules">清空</button>
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="rescanModules" style="display:none;">
+                                    <i class="bi bi-arrow-repeat me-1"></i>重新扫描
+                                </button>
+                            </div>
                         </div>
-                        <div class="col-auto">
+
+                        <!-- Environment selection -->
+                        <div class="mt-3" id="envSection" style="display:none;">
+                            <label class="form-label">部署环境 <small class="text-muted">(多选，默认选中第一个)</small></label>
+                            <div id="envList" class="border rounded p-2" style="background-color:#f8f9fa;">
+                                <span class="text-muted">请先选择项目</span>
+                            </div>
+                        </div>
+
+                        <!-- Auto-deploy toggle (REMOTE mode only) -->
+                        <div class="mt-3" id="autoDeploySection" style="display:none;">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="autoDeployToggle" name="autoDeploy" value="true" checked>
+                                <label class="form-check-label" for="autoDeployToggle">构建完成后自动部署</label>
+                            </div>
+                            <div class="form-text">
+                                开启：构建服务器可直接访问部署服务器，构建后自动部署。<br>
+                                关闭：构建和部署分两步，构建完成后手动下载产物并部署。
+                            </div>
+                        </div>
+
+                        <div class="mt-3">
                             <button type="submit" class="btn btn-primary">开始构建</button>
                         </div>
                     </form>
@@ -50,7 +92,19 @@
                                 <td th:text="${task.buildMode}"></td>
                                 <td th:text="${task.currentUser}"></td>
                                 <td th:text="${task.startTime}"></td>
-                                <td><a th:href="@{/build/log/{id}(id=${task.taskId})}" class="btn btn-sm btn-outline-primary">查看日志</a></td>
+                                <td>
+                                    <a th:href="@{/build/log/{id}(id=${task.taskId})}" class="btn btn-sm btn-outline-primary">查看日志</a>
+                                    <th:block th:if="${task.buildMode == 'REMOTE' and task.autoDeploy == false and task.status.name() == 'SUCCESS'}">
+                                        <button class="btn btn-sm btn-outline-success" th:onclick="'downloadArtifact(\'' + ${task.taskId} + '\')'">下载产物</button>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">部署脚本</button>
+                                            <ul class="dropdown-menu">
+                                                <li><a class="dropdown-item" href="#" th:onclick="'downloadScript(\'' + ${task.taskId} + '\', \'windows\'); return false;'">Win(.bat)</a></li>
+                                                <li><a class="dropdown-item" href="#" th:onclick="'downloadScript(\'' + ${task.taskId} + '\', \'linux\'); return false;'">Linux(.sh)</a></li>
+                                            </ul>
+                                        </div>
+                                    </th:block>
+                                </td>
                             </tr>
                             <tr th:if="${tasks.isEmpty()}"><td colspan="7" class="text-center text-muted">暂无构建任务</td></tr>
                         </tbody>
@@ -61,5 +115,198 @@
     </div>
 </div>
 <th:block th:replace="fragments/common :: scripts"></th:block>
+<script th:inline="javascript">
+    var configs = /*[[${configs}]]*/ [];
+    var configsById = {};
+    configs.forEach(function(c) { configsById[c.id] = c; });
+
+    var selectedConfigId = null;
+    var selectedLangType = null;
+
+    // Load modules when project is selected
+    $('#configSelect').change(function() {
+        selectedConfigId = $(this).val();
+        var selectedOption = $(this).find('option:selected');
+        selectedLangType = selectedOption.data('lang') || '';
+
+        // Show/hide module section based on language type
+        if (selectedLangType && selectedLangType !== 'NODE') {
+            $('#moduleSection').show();
+            loadModules();
+        } else {
+            $('#moduleSection').hide();
+        }
+
+        // Load environments
+        if (selectedConfigId) {
+            $('#envSection').show();
+            loadEnvironments();
+        } else {
+            $('#envSection').hide();
+        }
+    });
+
+    // Show/hide auto-deploy toggle based on build mode
+    $('#buildModeSelect').change(function() {
+        var mode = $(this).val();
+        if (mode === 'REMOTE') {
+            $('#autoDeploySection').show();
+        } else {
+            $('#autoDeploySection').hide();
+        }
+    });
+
+    function loadModules() {
+        if (!selectedConfigId) return;
+        var list = $('#moduleList');
+        list.html('<span class="text-muted">加载中...</span>');
+
+        $.get('/api/config/' + selectedConfigId + '/modules', function(data) {
+            if (data.scanning) {
+                list.html('<span class="text-muted"><i class="bi bi-arrow-repeat spin me-1"></i>扫描中...</span>');
+                setTimeout(loadModules, 2000);
+                return;
+            }
+
+            if (!data.modules || data.modules.length === 0) {
+                list.html('<span class="text-muted">尚未扫描到模块</span>');
+                $('#rescanModules').show();
+                return;
+            }
+
+            $('#rescanModules').hide();
+            var html = '';
+            data.modules.forEach(function(m) {
+                var depth = (m.moduleKey.match(/\//g) || []).length;
+                var indent = depth * 20;
+                html += '<div class="form-check" style="padding-left:' + (indent + 24) + 'px;">' +
+                    '<input class="form-check-input module-checkbox" type="checkbox" name="modulePaths" ' +
+                    'value="' + m.modulePath + '" checked>' +
+                    '<label class="form-check-label">' + m.moduleName + 
+                    ' <small class="text-muted">(' + m.modulePath + ')</small></label>' +
+                    '</div>';
+            });
+            list.html(html);
+        }).fail(function() {
+            list.html('<span class="text-danger">加载模块失败</span>');
+        });
+    }
+
+    function loadEnvironments() {
+        if (!selectedConfigId) return;
+        var list = $('#envList');
+        list.html('<span class="text-muted">加载中...</span>');
+
+        $.get('/api/config/' + selectedConfigId + '/env-servers', function(associations) {
+            // Dedupe by environmentId, keep first occurrence
+            var seen = {};
+            var envs = [];
+            associations.forEach(function(a) {
+                if (!seen[a.environmentId]) {
+                    seen[a.environmentId] = true;
+                    envs.push({
+                        id: a.environmentId,
+                        name: a.environmentName || ('环境' + a.environmentId)
+                    });
+                }
+            });
+
+            if (envs.length === 0) {
+                list.html('<span class="text-muted">未配置环境服务器，请先到项目配置页关联</span>');
+                return;
+            }
+
+            var html = '';
+            envs.forEach(function(env, idx) {
+                var checked = idx === 0 ? 'checked' : '';
+                html += '<div class="form-check form-check-inline">' +
+                    '<input class="form-check-input env-checkbox" type="checkbox" name="envIds" ' +
+                    'value="' + env.id + '" ' + checked + '>' +
+                    '<label class="form-check-label">' + env.name + '</label>' +
+                    '</div>';
+            });
+            list.html(html);
+        }).fail(function() {
+            list.html('<span class="text-danger">加载环境失败</span>');
+        });
+    }
+
+    // Select/clear all modules
+    $('#selectAllModules').click(function() {
+        $('.module-checkbox').prop('checked', true);
+    });
+    $('#clearAllModules').click(function() {
+        $('.module-checkbox').prop('checked', false);
+    });
+
+    // Rescan modules
+    $('#rescanModules').click(function() {
+        if (!selectedConfigId) return;
+        var btn = $(this);
+        btn.prop('disabled', true);
+        $.post('/api/config/' + selectedConfigId + '/scan-modules', function(data) {
+            if (data.success) {
+                loadModules();
+            } else {
+                alert(data.message || '扫描启动失败');
+                btn.prop('disabled', false);
+            }
+        }).fail(function() {
+            alert('扫描请求失败');
+            btn.prop('disabled', false);
+        });
+    });
+
+    // Form validation
+    $('#buildForm').on('submit', function(e) {
+        if (!selectedConfigId) {
+            e.preventDefault();
+            alert('请选择项目');
+            return false;
+        }
+
+        // Check environment selection
+        var envChecked = $('.env-checkbox:checked').length;
+        if ($('#envSection').is(':visible') && envChecked === 0) {
+            e.preventDefault();
+            alert('请至少选择一个部署环境');
+            return false;
+        }
+
+        // Check module selection for non-NODE projects
+        if ($('#moduleSection').is(':visible')) {
+            var moduleChecked = $('.module-checkbox:checked').length;
+            if (moduleChecked === 0) {
+                e.preventDefault();
+                alert('请至少选择一个模块');
+                return false;
+            }
+        }
+    });
+
+    // Download artifact (placeholder - actual download would need artifact resolution)
+    function downloadArtifact(taskId) {
+        alert('产物下载功能开发中。请在构建日志中查看产物路径，手动下载。');
+    }
+
+    // Download deployment script
+    function downloadScript(taskId, os) {
+        $.get('/api/build/deploy-script/' + taskId, {os: os}, function(data) {
+            if (data.success) {
+                // Create a blob and download
+                var blob = new Blob([data.script], {type: 'text/plain;charset=utf-8'});
+                var link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = data.filename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+            } else {
+                alert(data.message || '生成脚本失败');
+            }
+        }).fail(function() {
+            alert('请求失败');
+        });
+    }
+</script>
 </body>
 </html>

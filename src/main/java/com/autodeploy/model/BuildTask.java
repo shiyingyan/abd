@@ -1,6 +1,8 @@
 package com.autodeploy.model;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -15,6 +17,15 @@ public class BuildTask {
   private String logFilePath;
   private String currentUser;
   private String errorMessage;
+
+  // Module and environment selection
+  private List<String> selectedModules;
+  private List<Long> selectedEnvIds;
+  private Boolean autoDeploy;
+
+  // REMOTE mode artifact tracking
+  private Map<String, String> remoteArtifactPaths; // modulePath -> absolute path on build server
+  private String stagingDir; // local staging directory for downloaded artifacts
 
   // SSE subscribers for real-time log
   private final CopyOnWriteArrayList<SseEmitter> emitters = new CopyOnWriteArrayList<>();
@@ -156,5 +167,45 @@ public class BuildTask {
 
   public void setErrorMessage(String errorMessage) {
     this.errorMessage = errorMessage;
+  }
+
+  public List<String> getSelectedModules() {
+    return selectedModules;
+  }
+
+  public void setSelectedModules(List<String> selectedModules) {
+    this.selectedModules = selectedModules;
+  }
+
+  public List<Long> getSelectedEnvIds() {
+    return selectedEnvIds;
+  }
+
+  public void setSelectedEnvIds(List<Long> selectedEnvIds) {
+    this.selectedEnvIds = selectedEnvIds;
+  }
+
+  public Boolean getAutoDeploy() {
+    return autoDeploy;
+  }
+
+  public void setAutoDeploy(Boolean autoDeploy) {
+    this.autoDeploy = autoDeploy;
+  }
+
+  public Map<String, String> getRemoteArtifactPaths() {
+    return remoteArtifactPaths;
+  }
+
+  public void setRemoteArtifactPaths(Map<String, String> remoteArtifactPaths) {
+    this.remoteArtifactPaths = remoteArtifactPaths;
+  }
+
+  public String getStagingDir() {
+    return stagingDir;
+  }
+
+  public void setStagingDir(String stagingDir) {
+    this.stagingDir = stagingDir;
   }
 }

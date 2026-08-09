@@ -13,8 +13,7 @@ public class GlobalExceptionHandler {
   private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
   @ExceptionHandler(HttpMessageNotWritableException.class)
-  public void handleSseWriteError(
-      HttpMessageNotWritableException ex, HttpServletRequest request) {
+  public void handleSseWriteError(HttpMessageNotWritableException ex, HttpServletRequest request) {
     String uri = request.getRequestURI();
     String accept = request.getHeader("Accept");
     boolean isSse =

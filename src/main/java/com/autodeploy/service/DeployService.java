@@ -2,18 +2,18 @@ package com.autodeploy.service;
 
 import com.autodeploy.model.ProjectConfig;
 import com.autodeploy.model.ProjectEnvServer;
+import com.autodeploy.model.ProjectModule;
 import com.autodeploy.model.ServerInfo;
+import com.autodeploy.repository.ProjectModuleRepository;
+import com.autodeploy.util.ArtifactResolver;
 import com.autodeploy.util.EnvVarUtil;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,62 +27,96 @@ public class DeployService {
 
   @Autowired private SshService sshService;
   @Autowired private ServerInfoService serverInfoService;
+  @Autowired private ProjectModuleRepository moduleRepository;
 
   @Value("${autodeploy.builds-dir}")
   private String buildsDir;
 
   /**
-   * Deploy build artifact to all associated servers: 1. Get server list from project_env_server
-   * associations (fallback to inline config fields) 2. Resolve artifact path (by config or language
-   * type) 3. For each server: backup, upload, restart
+   * Deploy build artifacts to selected environments' servers. Supports multi-module projects and
+   * environment filtering.
+   *
+   * @param config project config
+   * @param workDir build working directory (repo root or buildWorkDir)
+   * @param modulePaths selected module paths (null/empty = all modules)
+   * @param envIds selected environment IDs (null/empty = all environments)
+   * @param logConsumer log output consumer
+   * @return true if all deployments succeeded
    */
-  public boolean deploy(ProjectConfig config, String workDir, Consumer<String> logConsumer) {
+  public boolean deploy(
+      ProjectConfig config,
+      String workDir,
+      List<String> modulePaths,
+      List<Long> envIds,
+      Consumer<String> logConsumer) {
     try {
-      // Step 1: Resolve artifact source path
-      File artifactSource = resolveArtifactSource(config, workDir, logConsumer);
-      if (artifactSource == null) {
+      // Step 1: Resolve module list
+      List<String> modules =
+          resolveModuleList(config.getId(), modulePaths, config.getLanguageType());
+      logConsumer.accept("部署模块: " + String.join(", ", modules));
+
+      // Step 2: Resolve artifacts for each module
+      List<File> allArtifacts = new ArrayList<>();
+      File workDirFile = new File(workDir);
+      for (String modulePath : modules) {
+        File moduleDir = ".".equals(modulePath) ? workDirFile : new File(workDirFile, modulePath);
+        if (!moduleDir.exists()) {
+          logConsumer.accept("模块目录不存在: " + moduleDir.getAbsolutePath());
+          continue;
+        }
+        List<File> artifacts = ArtifactResolver.resolve(moduleDir, config, logConsumer);
+        allArtifacts.addAll(artifacts);
+      }
+
+      if (allArtifacts.isEmpty()) {
+        logConsumer.accept("所有模块均未发现构建产物");
         return false;
       }
-      logConsumer.accept("Deploy artifact source: " + artifactSource.getAbsolutePath());
+      logConsumer.accept("共发现 " + allArtifacts.size() + " 个产物文件");
 
-      // Step 2: Get target servers from associations
+      // Step 3: Get target servers from associations, filtered by envIds
       List<ProjectEnvServer> associations =
           serverInfoService.listProjectAssociations(config.getId());
       if (associations.isEmpty()) {
         // Fallback to inline config fields for backward compatibility
         if (config.getDeployServerHost() != null
             && !config.getDeployServerHost().trim().isEmpty()) {
-          logConsumer.accept("No server associations found, using inline config (legacy mode)");
+          logConsumer.accept("未配置环境服务器关联，使用内联配置 (legacy mode)");
           return deployToServer(
               config,
               config.getDeployServerHost(),
               config.getDeployServerPort() != null ? config.getDeployServerPort() : 22,
               config.getDeployServerUser(),
               config.getDeployAuthEnvKey(),
-              artifactSource,
+              allArtifacts,
               logConsumer);
         }
-        logConsumer.accept("No deploy servers configured (neither associations nor inline)");
+        logConsumer.accept("未配置部署服务器");
         return false;
       }
 
-      // Step 3: Deploy to each associated server
+      // Filter by envIds if specified
+      if (envIds != null && !envIds.isEmpty()) {
+        associations.removeIf(a -> !envIds.contains(a.getEnvironmentId()));
+        logConsumer.accept("按环境筛选后剩余 " + associations.size() + " 个服务器关联");
+      }
+
+      // Step 4: Deploy to each server
       boolean allSuccess = true;
       boolean anyDeployed = false;
       for (ProjectEnvServer assoc : associations) {
         if (assoc.getDeployEnabled() != null && !assoc.getDeployEnabled()) {
-          logConsumer.accept("Skipping server (deploy disabled): id=" + assoc.getServerId());
+          logConsumer.accept("跳过服务器 (部署已禁用): id=" + assoc.getServerId());
           continue;
         }
         anyDeployed = true;
         ServerInfo server = serverInfoService.getById(assoc.getServerId());
         if (server == null) {
-          logConsumer.accept("Server not found (id=" + assoc.getServerId() + "), skipping");
+          logConsumer.accept("服务器不存在 (id=" + assoc.getServerId() + ")，跳过");
           allSuccess = false;
           continue;
         }
-        logConsumer.accept(
-            "Deploying to server: " + server.getName() + " (" + server.getHost() + ")");
+        logConsumer.accept("部署到服务器: " + server.getName() + " (" + server.getHost() + ")");
         int serverPort = server.getPort() != null ? server.getPort() : 22;
         boolean ok =
             deployToServer(
@@ -91,24 +125,99 @@ public class DeployService {
                 serverPort,
                 server.getUser(),
                 server.getAuthEnvKey(),
-                artifactSource,
+                allArtifacts,
                 logConsumer);
         if (!ok) {
-          logConsumer.accept("Deploy FAILED for server: " + server.getName());
+          logConsumer.accept("部署失败: " + server.getName());
           allSuccess = false;
         } else {
-          logConsumer.accept("Deploy SUCCESS for server: " + server.getName());
+          logConsumer.accept("部署成功: " + server.getName());
         }
       }
       if (!anyDeployed) {
-        logConsumer.accept("No servers enabled for deployment");
+        logConsumer.accept("没有启用部署的服务器");
       }
       return allSuccess;
     } catch (Exception e) {
       log.error("Deploy failed for {}", config.getProjectName(), e);
-      logConsumer.accept("Deploy exception: " + e.getMessage());
+      logConsumer.accept("部署异常: " + e.getMessage());
       return false;
     }
+  }
+
+  /**
+   * Resolve the module list to deploy. If modulePaths is null/empty, query from database or use
+   * single root module.
+   */
+  private List<String> resolveModuleList(
+      Long projectId, List<String> modulePaths, String languageType) {
+    if (modulePaths != null && !modulePaths.isEmpty()) {
+      return modulePaths;
+    }
+    // NODE projects don't use modules
+    if ("NODE".equals(languageType)) {
+      List<String> result = new ArrayList<>();
+      result.add(".");
+      return result;
+    }
+    // Query scanned modules from database
+    List<ProjectModule> modules =
+        moduleRepository.selectList(
+            new QueryWrapper<ProjectModule>()
+                .eq("project_id", projectId)
+                .orderByAsc("module_path"));
+    if (modules.isEmpty()) {
+      // No scanned modules, use single root module
+      List<String> result = new ArrayList<>();
+      result.add(".");
+      return result;
+    }
+    List<String> result = new ArrayList<>();
+    for (ProjectModule m : modules) {
+      result.add(m.getModulePath());
+    }
+    return result;
+  }
+
+  /**
+   * Compute the effective target path on the deploy server. If installDir is set, targetPath =
+   * installDir + deployTargetPath. Otherwise, use deployTargetPath as-is.
+   */
+  private String effectiveTargetPath(ProjectConfig config) {
+    return joinRelative(config.getInstallDir(), config.getDeployTargetPath());
+  }
+
+  /**
+   * Compute the effective script directory. scriptDir is relative to installDir, so the effective
+   * path is installDir + scriptDir. If installDir is unset, scriptDir is used as-is.
+   */
+  private String effectiveScriptPath(ProjectConfig config) {
+    return joinRelative(config.getInstallDir(), config.getScriptDir());
+  }
+
+  /**
+   * Join an optional base directory with a relative sub-path. Either may be null/empty. Strips a
+   * leading "/" from sub so we never produce double slashes.
+   */
+  private String joinRelative(String baseDir, String subPath) {
+    if (baseDir == null || baseDir.trim().isEmpty()) {
+      return subPath == null ? null : (subPath.trim().isEmpty() ? null : subPath.trim());
+    }
+    if (subPath == null || subPath.trim().isEmpty()) {
+      return baseDir.trim();
+    }
+
+    String normalizedBase = baseDir.trim();
+    if (normalizedBase.endsWith("/")) {
+      normalizedBase = normalizedBase.substring(0, normalizedBase.length() - 1);
+    }
+
+    String normalizedSub = subPath.trim();
+    if (normalizedSub.startsWith("/")) {
+      normalizedSub = normalizedSub.substring(1);
+    }
+
+    return normalizedBase + "/" + normalizedSub;
   }
 
   private boolean deployToServer(
@@ -117,194 +226,106 @@ public class DeployService {
       int port,
       String user,
       String authEnvKey,
-      File artifactSource,
+      List<File> artifacts,
       Consumer<String> logConsumer) {
     try {
       String password = EnvVarUtil.getValue(authEnvKey);
       if (password == null) {
-        logConsumer.accept("Deploy auth env var not set: " + authEnvKey);
+        logConsumer.accept("部署认证环境变量未设置: " + authEnvKey);
         log.error("Deploy auth env var not set: {}", authEnvKey);
         return false;
       }
 
-      String targetPath = config.getDeployTargetPath();
+      String targetPath = effectiveTargetPath(config);
       if (targetPath == null || targetPath.trim().isEmpty()) {
-        logConsumer.accept("Deploy target path not configured");
+        logConsumer.accept("部署目标路径未配置");
         return false;
       }
 
-      // Backup existing deployment
-      backupExistingDeployment(host, port, user, password, targetPath, logConsumer);
+      // Step 1: Back up at the existing location first — no mkdir yet.
+      // If the target file/dir exists, it's already at its place; if not, backup is a no-op.
+      // This avoids creating an empty target directory before a fresh deployment.
+      for (File artifact : artifacts) {
+        if (artifact.isFile()) {
+          String serverTargetFile = targetPath + "/" + artifact.getName();
+          backupServerPath(host, port, user, password, serverTargetFile, logConsumer);
+        } else if (artifact.isDirectory()) {
+          backupServerPath(host, port, user, password, targetPath, logConsumer);
+        }
+      }
 
-      // Upload artifact
-      logConsumer.accept("Uploading artifact to " + host + ":" + targetPath);
-      sshService.uploadFile(
-          host, port, user, password, artifactSource.getAbsolutePath(), targetPath);
-      logConsumer.accept("Artifact uploaded successfully");
-      log.info("Artifact uploaded to {}:{}", host, targetPath);
+      // Step 2: Ensure the target directory exists. Needed for first-time file deployments
+      // (backup above was a no-op) and for folder deployments (backup renamed the old dir).
+      sshService.executeCommand(host, port, user, password, "mkdir -p \"" + targetPath + "\"");
 
-      // Execute restart command
+      // Step 3: Upload each artifact.
+      for (File artifact : artifacts) {
+        if (artifact.isFile()) {
+          String serverTargetFile = targetPath + "/" + artifact.getName();
+          logConsumer.accept(
+              "上传文件: " + artifact.getName() + " -> " + host + ":" + serverTargetFile);
+          sshService.uploadFile(host, port, user, password, artifact.getAbsolutePath(), targetPath);
+        } else if (artifact.isDirectory()) {
+          logConsumer.accept("上传目录: " + artifact.getName() + " -> " + host + ":" + targetPath);
+          sshService.uploadFile(host, port, user, password, artifact.getAbsolutePath(), targetPath);
+        } else {
+          logConsumer.accept("未知产物类型，跳过: " + artifact.getAbsolutePath());
+        }
+      }
+      logConsumer.accept("产物上传完成 (" + artifacts.size() + " 个)");
+      log.info("Artifacts uploaded to {}:{}", host, targetPath);
+
+      // Execute restart command (once per server)
       String cmd = config.getRestartCommand();
       if (cmd == null || cmd.trim().isEmpty()) {
         cmd = config.getStartCommand();
       }
       if (cmd != null && !cmd.trim().isEmpty()) {
-        logConsumer.accept("Executing command: " + cmd);
+        // scriptDir is relative to installDir
+        String scriptPath = effectiveScriptPath(config);
+        if (scriptPath != null && !scriptPath.isEmpty()) {
+          cmd = "cd \"" + scriptPath + "\" && " + cmd;
+        }
+        logConsumer.accept("执行命令: " + cmd);
         String output = sshService.executeCommand(host, port, user, password, cmd);
         if (output != null && !output.trim().isEmpty()) {
-          logConsumer.accept("Command output: " + output.trim());
+          logConsumer.accept("命令输出: " + output.trim());
         }
         log.info("Restart command output: {}", output);
       }
       return true;
     } catch (Exception e) {
       log.error("Deploy to {} failed", host, e);
-      logConsumer.accept("Deploy exception: " + e.getMessage());
+      logConsumer.accept("部署异常: " + e.getMessage());
       return false;
     }
   }
 
   /**
-   * Resolve the artifact source directory/file based on config or language type. Returns null and
-   * logs error via logConsumer if artifact cannot be found.
+   * Back up a single path (file or directory) on the remote server by renaming it with a timestamp
+   * suffix. Only the exact path is renamed — sibling files/dirs are untouched.
    */
-  private File resolveArtifactSource(
-      ProjectConfig config, String workDir, Consumer<String> logConsumer) {
-    // If deploySourcePath is configured, use it (relative to workDir)
-    if (config.getDeploySourcePath() != null && !config.getDeploySourcePath().trim().isEmpty()) {
-      File source = new File(workDir, config.getDeploySourcePath().trim());
-      if (source.exists()) {
-        return source;
-      }
-      logConsumer.accept("Configured artifact path not found: " + source.getAbsolutePath());
-      return null;
-    }
-
-    // Auto-detect based on language type
-    String langType = config.getLanguageType();
-    if (langType == null || langType.trim().isEmpty()) {
-      return new File(workDir);
-    }
-
-    switch (langType.toUpperCase()) {
-      case "JAVA":
-        {
-          File targetDir = new File(workDir, "target");
-          if (targetDir.isDirectory()) {
-            File[] jars =
-                targetDir.listFiles(
-                    (dir, name) ->
-                        name.endsWith(".jar")
-                            && !name.contains("-sources")
-                            && !name.contains("-javadoc"));
-            if (jars != null && jars.length > 0) {
-              return jars[0];
-            }
-          }
-          return targetDir.isDirectory() ? targetDir : new File(workDir);
-        }
-      case "NODE":
-        {
-          // Step 1: Check vue.config.js for outputDir
-          File vueConfig = new File(workDir, "vue.config.js");
-          if (vueConfig.isFile()) {
-            String outputDirName = parseVueConfigOutputDir(vueConfig);
-            if (outputDirName != null) {
-              File outputDir = new File(workDir, outputDirName);
-              if (outputDir.isDirectory() && isNonEmpty(outputDir)) {
-                logConsumer.accept("Detected outputDir from vue.config.js: " + outputDirName);
-                return outputDir;
-              }
-              logConsumer.accept(
-                  "vue.config.js outputDir is '"
-                      + outputDirName
-                      + "', but directory does not exist or is empty. Please check if the build has completed.");
-              return null;
-            }
-          }
-
-          // Step 2: Auto-detect common Node output directories
-          String[] nodeOutputDirs = {"dist", "build", ".next", ".output", "out"};
-          for (String dirName : nodeOutputDirs) {
-            File outputDir = new File(workDir, dirName);
-            if (outputDir.isDirectory() && isNonEmpty(outputDir)) {
-              logConsumer.accept("Auto-detected Node artifact directory: " + dirName);
-              return outputDir;
-            }
-          }
-
-          logConsumer.accept(
-              "Node artifact directory not found. No build output detected in "
-                  + workDir
-                  + ". Please ensure the build has completed successfully.");
-          return null;
-        }
-      case "GO":
-        {
-          File[] executables =
-              new File(workDir)
-                  .listFiles(
-                      (dir, name) -> {
-                        if (name.contains(".")) return false;
-                        File f = new File(dir, name);
-                        return f.isFile() && f.canExecute();
-                      });
-          if (executables != null && executables.length > 0) {
-            return executables[0];
-          }
-          return new File(workDir);
-        }
-      case "PYTHON":
-      default:
-        return new File(workDir);
-    }
-  }
-
-  /**
-   * Parse vue.config.js to extract the outputDir value. Matches patterns like: outputDir: 'dist' or
-   * outputDir: "my-output"
-   */
-  private String parseVueConfigOutputDir(File vueConfig) {
-    try {
-      String content = new String(Files.readAllBytes(vueConfig.toPath()), "UTF-8");
-      Matcher matcher = Pattern.compile("outputDir\\s*:\\s*['\"]([^'\"]+)['\"]").matcher(content);
-      if (matcher.find()) {
-        return matcher.group(1);
-      }
-    } catch (Exception e) {
-      log.warn("Failed to parse vue.config.js: {}", e.getMessage());
-    }
-    return null;
-  }
-
-  private boolean isNonEmpty(File dir) {
-    String[] files = dir.list();
-    return files != null && files.length > 0;
-  }
-
-  /** Backup existing deployment directory on target server by renaming with timestamp suffix. */
-  private void backupExistingDeployment(
+  private void backupServerPath(
       String host,
       int port,
       String user,
       String password,
-      String targetPath,
+      String serverPath,
       Consumer<String> logConsumer)
       throws Exception {
     String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
     String normalizedPath =
-        targetPath.endsWith("/") ? targetPath.substring(0, targetPath.length() - 1) : targetPath;
+        serverPath.endsWith("/") ? serverPath.substring(0, serverPath.length() - 1) : serverPath;
     String backupPath = normalizedPath + "_" + timestamp;
 
     String checkCmd = "if [ -e \"" + normalizedPath + "\" ]; then echo EXISTS; fi";
     String result = sshService.executeCommand(host, port, user, password, checkCmd);
     if (result != null && result.contains("EXISTS")) {
-      logConsumer.accept("Backing up existing deployment to " + backupPath);
+      logConsumer.accept("备份: " + normalizedPath + " -> " + backupPath);
       sshService.executeCommand(
           host, port, user, password, "mv \"" + normalizedPath + "\" \"" + backupPath + "\"");
-      logConsumer.accept("Backup completed");
     } else {
-      logConsumer.accept("No existing deployment to backup");
+      logConsumer.accept("无现有部署需备份: " + normalizedPath);
     }
   }
 
@@ -313,9 +334,9 @@ public class DeployService {
       String host, int port, String user, String password, String remotePath, String localDir)
       throws Exception {
     sshService.downloadFile(host, port, user, password, remotePath, localDir);
-    Path remote = Paths.get(remotePath);
+    java.nio.file.Path remote = java.nio.file.Paths.get(remotePath);
     String fileName = remote.getFileName().toString();
-    return Paths.get(localDir, fileName).toString();
+    return java.nio.file.Paths.get(localDir, fileName).toString();
   }
 
   /** Test SSH connection to a server. */
