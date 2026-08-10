@@ -18,6 +18,7 @@ public class ScheduledCleanupTask {
 
   @Autowired private BuildHistoryService buildHistoryService;
   @Autowired private SystemSettingsService settingsService;
+  @Autowired private JdbcSessionDAO jdbcSessionDAO;
 
   @Value("${autodeploy.logs-dir}")
   private String logsDir;
@@ -30,6 +31,11 @@ public class ScheduledCleanupTask {
     buildHistoryService.cleanExpiredRecords();
     // Clean orphaned log files
     cleanOrphanedLogFiles();
+    // Purge expired Shiro sessions from the DB
+    int purged = jdbcSessionDAO.purgeExpired();
+    if (purged > 0) {
+      log.info("Purged {} expired sessions", purged);
+    }
     log.info("Daily cleanup task completed.");
   }
 

@@ -45,15 +45,17 @@ public class GitService {
     if (hasGitRepo) {
       log.info("Existing repository found at {}, attempting git pull", repoDir.getAbsolutePath());
       try (Git git = Git.open(repoDir)) {
-        // Guard 1: refuse to pull if working tree is dirty — protects local edits
+        // Configure JGit to respect system git configuration (core.autocrlf, core.fileMode, etc.)
+        // This ensures JGit detects changes the same way as command-line git.
+        configureGitFromSystemSettings(git.getRepository());
+
+        // Guard 1: refuse to pull if working tree has uncommitted changes to tracked files.
+        // Untracked files (build artifacts) are intentionally excluded — they don't conflict
+        // with git pull and would cause false positives in build environments.
         Status status = git.status().call();
-        if (status.hasUncommittedChanges() || !status.getUntracked().isEmpty()) {
+        if (status.hasUncommittedChanges()) {
           String msg =
-              "本地仓库有未提交的修改（"
-                  + status.getUncommittedChanges().size()
-                  + " 个已修改, "
-                  + status.getUntracked().size()
-                  + " 个未跟踪），请先提交或暂存后再触发构建";
+              "本地仓库有未提交的修改（" + status.getUncommittedChanges().size() + " 个已修改），请先提交或暂存后再触发构建";
           log.warn("Git pull refused: {}", msg);
           throw new IllegalStateException(msg);
         }
@@ -156,14 +158,19 @@ public class GitService {
       return null;
     }
     try (Git git = Git.open(repoDir)) {
+      // Configure JGit to respect system git configuration
+      configureGitFromSystemSettings(git.getRepository());
+
       org.eclipse.jgit.revwalk.RevCommit head = git.log().setMaxCount(1).call().iterator().next();
       String hash = head.getName();
 
-      // Detect any working-tree change that hasn't been committed yet.
+      // Detect working-tree changes that haven't been committed yet.
+      // Note: getUntracked() is intentionally excluded — build artifacts from previous
+      // builds (target/, dist/, etc.) persist in the repo directory and would cause
+      // false positives.
       Status status = git.status().call();
       boolean dirty =
           status.hasUncommittedChanges()
-              || !status.getUntracked().isEmpty()
               || !status.getChanged().isEmpty()
               || !status.getAdded().isEmpty()
               || !status.getRemoved().isEmpty()
@@ -174,6 +181,24 @@ public class GitService {
     } catch (Exception e) {
       log.warn("Failed to read HEAD hash from {}: {}", repoDir.getAbsolutePath(), e.getMessage());
       return null;
+    }
+  }
+
+  /**
+   * Check whether a local repository has uncommitted changes to tracked files. Returns false if the
+   * directory doesn't exist or isn't a git repository.
+   */
+  public boolean hasUncommittedChanges(File repoDir) {
+    if (repoDir == null || !repoDir.isDirectory() || !new File(repoDir, ".git").isDirectory()) {
+      return false;
+    }
+    try (Git git = Git.open(repoDir)) {
+      configureGitFromSystemSettings(git.getRepository());
+      Status status = git.status().call();
+      return status.hasUncommittedChanges();
+    } catch (Exception e) {
+      log.warn("Failed to check uncommitted changes in {}: {}", repoDir.getAbsolutePath(), e.getMessage());
+      return false;
     }
   }
 
@@ -246,6 +271,140 @@ public class GitService {
       // For SSH, token is typically the passphrase for the SSH key
       // (empty string if no passphrase)
       return new UsernamePasswordCredentialsProvider(token, "");
+    }
+  }
+
+  /**
+   * Configure JGit repository to respect system git configuration. This ensures JGit detects
+   * changes the same way as command-line git, especially for settings like core.autocrlf (line
+   * ending normalization) and core.fileMode (file permission tracking).
+   *
+   * <p>Reads config in git's standard priority order: system → user. Settings already present in
+   * the repo's own config take precedence over inherited values.
+   */
+  private void configureGitFromSystemSettings(org.eclipse.jgit.lib.Repository repo) {
+    try {
+      org.eclipse.jgit.lib.StoredConfig repoConfig = repo.getConfig();
+
+      // Collect key-value pairs from external configs in priority order
+      // (system config overrides user config)
+      java.util.Map<String, String> externalSettings = new java.util.LinkedHashMap<>();
+
+      // 1. Try user-level config first (lower priority, added first)
+      loadGitConfigSetting(
+          System.getProperty("user.home") + File.separator + ".gitconfig", externalSettings);
+
+      // 2. Try system-level config (higher priority, overwrites user settings)
+      String programData = System.getenv("PROGRAMDATA");
+      if (programData != null && !programData.isEmpty()) {
+        loadGitConfigSetting(
+            programData + File.separator + "Git" + File.separator + "config", externalSettings);
+      }
+      String programFiles = System.getenv("PROGRAMFILES");
+      if (programFiles != null && !programFiles.isEmpty()) {
+        loadGitConfigSetting(
+            programFiles
+                + File.separator
+                + "Git"
+                + File.separator
+                + "etc"
+                + File.separator
+                + "gitconfig",
+            externalSettings);
+      }
+
+      // 3. Also try JGit SystemReader (may find configs we missed)
+      try {
+        org.eclipse.jgit.util.SystemReader sr = org.eclipse.jgit.util.SystemReader.getInstance();
+        org.eclipse.jgit.lib.Config sysCfg = sr.openSystemConfig(null, null);
+        if (sysCfg != null) {
+          applySetting(externalSettings, sysCfg, "autocrlf");
+          applySetting(externalSettings, sysCfg, "fileMode");
+          applySetting(externalSettings, sysCfg, "ignoreCase");
+        }
+        org.eclipse.jgit.lib.Config userCfg = sr.openUserConfig(null, null);
+        if (userCfg != null) {
+          // User config has lower priority — only set if not already present from system
+          if (!externalSettings.containsKey("autocrlf")) {
+            applySetting(externalSettings, userCfg, "autocrlf");
+          }
+          if (!externalSettings.containsKey("fileMode")) {
+            applySetting(externalSettings, userCfg, "fileMode");
+          }
+          if (!externalSettings.containsKey("ignoreCase")) {
+            applySetting(externalSettings, userCfg, "ignoreCase");
+          }
+        }
+      } catch (Exception e) {
+        log.info("JGit SystemReader fallback: {}", e.getMessage());
+      }
+
+      if (externalSettings.isEmpty()) {
+        log.warn("No external git config found — JGit may report false positives on Windows");
+        return;
+      }
+
+      // Apply settings to repo config (only if not already set in repo's own config)
+      int applied = 0;
+      for (java.util.Map.Entry<String, String> entry : externalSettings.entrySet()) {
+        String key = entry.getKey();
+        String value = entry.getValue();
+        String existing = repoConfig.getString("core", null, key);
+        if (existing == null) {
+          repoConfig.setString("core", null, key, value);
+          log.info("Applied core.{}={} from external git config", key, value);
+          applied++;
+        }
+      }
+
+      if (applied > 0) {
+        repoConfig.save();
+        log.info(
+            "Saved {} git config setting(s) to {}", applied, repo.getDirectory().getAbsolutePath());
+      } else {
+        log.info("Repo config already has all external settings — no changes needed");
+      }
+    } catch (Exception e) {
+      log.warn("Failed to apply system git config: {}", e.getMessage());
+    }
+  }
+
+  /** Read core.autocrlf, core.fileMode, core.ignoreCase from a git config file (simple parser). */
+  private void loadGitConfigSetting(String filePath, java.util.Map<String, String> target) {
+    File f = new File(filePath);
+    if (!f.isFile()) {
+      return;
+    }
+    try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(f))) {
+      boolean inCore = false;
+      String line;
+      while ((line = reader.readLine()) != null) {
+        line = line.trim();
+        if (line.startsWith("[")) {
+          inCore = line.toLowerCase().contains("[core]");
+          continue;
+        }
+        if (inCore && line.contains("=")) {
+          int eq = line.indexOf('=');
+          String key = line.substring(0, eq).trim().toLowerCase();
+          String value = line.substring(eq + 1).trim();
+          if ("autocrlf".equals(key) || "filemode".equals(key) || "ignorecase".equals(key)) {
+            target.put(key, value);
+            log.info("Read core.{}={} from {}", key, value, f.getAbsolutePath());
+          }
+        }
+      }
+    } catch (Exception e) {
+      log.info("Failed to parse git config {}: {}", f.getAbsolutePath(), e.getMessage());
+    }
+  }
+
+  /** Helper to extract a core setting from a JGit Config and put it into the target map. */
+  private void applySetting(
+      java.util.Map<String, String> target, org.eclipse.jgit.lib.Config cfg, String key) {
+    String value = cfg.getString("core", null, key);
+    if (value != null) {
+      target.put(key, value);
     }
   }
 }

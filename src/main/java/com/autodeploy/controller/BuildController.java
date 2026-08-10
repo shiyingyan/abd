@@ -39,11 +39,13 @@ public class BuildController {
       @RequestParam(required = false) List<String> modulePaths,
       @RequestParam(required = false) List<Long> envIds,
       @RequestParam(required = false) String autoDeploy,
+      @RequestParam(required = false) String skipGitPull,
       Model model) {
     String username = (String) SecurityUtils.getSubject().getPrincipal();
     boolean auto = !"false".equalsIgnoreCase(autoDeploy);
+    boolean skipGit = "true".equalsIgnoreCase(skipGitPull);
     String taskId =
-        buildService.startBuild(configId, buildMode, username, modulePaths, envIds, auto);
+        buildService.startBuild(configId, buildMode, username, modulePaths, envIds, auto, skipGit);
     if (taskId == null) {
       model.addAttribute("error", "项目配置不存在");
     } else {
@@ -92,6 +94,14 @@ public class BuildController {
       map.put("user", task.getCurrentUser());
       result.add(map);
     }
+    return result;
+  }
+
+  @GetMapping("/api/build/git-status/{configId}")
+  @ResponseBody
+  public Map<String, Object> gitStatus(@PathVariable Long configId) {
+    Map<String, Object> result = new HashMap<>();
+    result.put("hasUncommittedChanges", buildService.hasUncommittedChanges(configId));
     return result;
   }
 

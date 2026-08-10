@@ -27,9 +27,28 @@
     var evtSource = new EventSource('/api/build/sse/' + taskId);
     var sseClosed = false;
 
+    // Batch SSE lines and flush once per animation frame to avoid per-line full DOM
+    // re-parse (innerHTML +=) and per-line forced reflow (scrollTop). This keeps
+    // the page responsive even on builds that emit thousands of lines.
+    var pendingLines = [];
+    var flushScheduled = false;
+    function scheduleFlush() {
+        if (flushScheduled) return;
+        flushScheduled = true;
+        window.requestAnimationFrame(function() {
+            flushScheduled = false;
+            if (pendingLines.length === 0) return;
+            var batch = pendingLines.join('');
+            pendingLines = [];
+            // appendChild(textNode) is O(batch) and never re-parses existing content.
+            logArea.appendChild(document.createTextNode(batch));
+            logArea.scrollTop = logArea.scrollHeight;
+        });
+    }
+
     evtSource.onmessage = function(e) {
-        logArea.innerHTML += e.data + '\n';
-        logArea.scrollTop = logArea.scrollHeight;
+        pendingLines.push(e.data + '\n');
+        scheduleFlush();
     };
 
     evtSource.onerror = function() {

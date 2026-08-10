@@ -245,18 +245,29 @@ public class DeployService {
       // Step 1: Back up at the existing location first — no mkdir yet.
       // If the target file/dir exists, it's already at its place; if not, backup is a no-op.
       // This avoids creating an empty target directory before a fresh deployment.
-      for (File artifact : artifacts) {
-        if (artifact.isFile()) {
-          String serverTargetFile = targetPath + "/" + artifact.getName();
-          backupServerPath(host, port, user, password, serverTargetFile, logConsumer);
-        } else if (artifact.isDirectory()) {
-          backupServerPath(host, port, user, password, targetPath, logConsumer);
-        }
-      }
+      boolean isNode = "NODE".equalsIgnoreCase(config.getLanguageType());
 
-      // Step 2: Ensure the target directory exists. Needed for first-time file deployments
-      // (backup above was a no-op) and for folder deployments (backup renamed the old dir).
-      sshService.executeCommand(host, port, user, password, "mkdir -p \"" + targetPath + "\"");
+      if (isNode) {
+        // Node.js directory artifacts: upload contents into targetPath, not the wrapper dir.
+        // Back up targetPath once before any modifications.
+        backupServerPath(host, port, user, password, targetPath, logConsumer);
+        sshService.executeCommand(host, port, user, password, "mkdir -p \"" + targetPath + "\"");
+        // Clean existing contents so stale files from previous deploys don't linger.
+        sshService.executeCommand(
+            host, port, user, password, "find \"" + targetPath + "\" -mindepth 1 -delete");
+      } else {
+        for (File artifact : artifacts) {
+          if (artifact.isFile()) {
+            String serverTargetFile = targetPath + "/" + artifact.getName();
+            backupServerPath(host, port, user, password, serverTargetFile, logConsumer);
+          } else if (artifact.isDirectory()) {
+            backupServerPath(host, port, user, password, targetPath, logConsumer);
+          }
+        }
+        // Step 2: Ensure the target directory exists. Needed for first-time file deployments
+        // (backup above was a no-op) and for folder deployments (backup renamed the old dir).
+        sshService.executeCommand(host, port, user, password, "mkdir -p \"" + targetPath + "\"");
+      }
 
       // Step 3: Upload each artifact.
       for (File artifact : artifacts) {
@@ -266,8 +277,21 @@ public class DeployService {
               "上传文件: " + artifact.getName() + " -> " + host + ":" + serverTargetFile);
           sshService.uploadFile(host, port, user, password, artifact.getAbsolutePath(), targetPath);
         } else if (artifact.isDirectory()) {
-          logConsumer.accept("上传目录: " + artifact.getName() + " -> " + host + ":" + targetPath);
-          sshService.uploadFile(host, port, user, password, artifact.getAbsolutePath(), targetPath);
+          if (isNode) {
+            // Upload directory contents directly into targetPath (no wrapper directory)
+            File[] children = artifact.listFiles();
+            if (children != null) {
+              for (File child : children) {
+                logConsumer.accept(
+                    "上传: " + child.getName() + " -> " + host + ":" + targetPath);
+                sshService.uploadFile(
+                    host, port, user, password, child.getAbsolutePath(), targetPath);
+              }
+            }
+          } else {
+            logConsumer.accept("上传目录: " + artifact.getName() + " -> " + host + ":" + targetPath);
+            sshService.uploadFile(host, port, user, password, artifact.getAbsolutePath(), targetPath);
+          }
         } else {
           logConsumer.accept("未知产物类型，跳过: " + artifact.getAbsolutePath());
         }

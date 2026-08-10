@@ -1,0 +1,142 @@
+package com.autodeploy.config;
+
+import com.autodeploy.model.ShiroSession;
+import com.autodeploy.repository.ShiroSessionRepository;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import org.apache.shiro.session.Session;
+import org.apache.shiro.session.mgt.SimpleSession;
+import org.apache.shiro.session.mgt.eis.SessionDAO;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+/**
+ * Persists Shiro sessions to the {@code shiro_session} table so users don't have to log in again
+ * after an application restart. Sessions are Java-serialized and then Base64-encoded for safe
+ * storage in a {@code LONGTEXT} column.
+ */
+@Component
+public class JdbcSessionDAO implements SessionDAO {
+
+  private static final Logger log = LoggerFactory.getLogger(JdbcSessionDAO.class);
+
+  @Autowired private ShiroSessionRepository repository;
+
+  @Override
+  public Serializable create(Session session) {
+    Serializable id = session.getId();
+    if (id == null) {
+      id = java.util.UUID.randomUUID().toString();
+      ((SimpleSession) session).setId(id);
+    }
+    save(session);
+    return id;
+  }
+
+  @Override
+  public Session readSession(Serializable sessionId) {
+    ShiroSession row = repository.selectById(asString(sessionId));
+    if (row == null || row.getSessionData() == null) return null;
+    if (row.getExpireAt() != null && row.getExpireAt().isBefore(LocalDateTime.now())) {
+      repository.deleteById(asString(sessionId));
+      return null;
+    }
+    try {
+      byte[] data = Base64.getDecoder().decode(row.getSessionData());
+      try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(data))) {
+        Session session = (Session) ois.readObject();
+        if (session instanceof SimpleSession && ((SimpleSession) session).isExpired()) {
+          repository.deleteById(asString(sessionId));
+          return null;
+        }
+        return session;
+      }
+    } catch (Exception e) {
+      log.warn("Failed to deserialize session {}: {}", sessionId, e.getMessage());
+      return null;
+    }
+  }
+
+  @Override
+  public void update(Session session) {
+    save(session);
+  }
+
+  @Override
+  public void delete(Session session) {
+    if (session == null || session.getId() == null) return;
+    repository.deleteById(asString(session.getId()));
+  }
+
+  @Override
+  public Collection<Session> getActiveSessions() {
+    // Not used for anything critical; returning empty keeps it cheap.
+    return Collections.emptyList();
+  }
+
+  /** Delete rows whose {@code expire_at} is in the past. */
+  public int purgeExpired() {
+    return repository.deleteExpired(LocalDateTime.now());
+  }
+
+  private void save(Session session) {
+    Serializable id = session.getId();
+    if (id == null) return;
+    try {
+      ByteArrayOutputStream baos = new ByteArrayOutputStream();
+      try (ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+        oos.writeObject(session);
+      }
+      String encoded = Base64.getEncoder().encodeToString(baos.toByteArray());
+
+      Date lastAccess = session.getLastAccessTime();
+      LocalDateTime lastAccessLdt =
+          lastAccess != null
+              ? LocalDateTime.ofInstant(lastAccess.toInstant(), ZoneId.systemDefault())
+              : LocalDateTime.now();
+      long timeoutMs = session.getTimeout();
+      long expireAtMs = lastAccess.getTime() + (timeoutMs > 0 ? timeoutMs : 24L * 60 * 60 * 1000);
+      LocalDateTime expireAt =
+          LocalDateTime.ofInstant(Instant.ofEpochMilli(expireAtMs), ZoneId.systemDefault());
+
+      ShiroSession existing = repository.selectById(asString(id));
+      if (existing == null) {
+        ShiroSession row = new ShiroSession();
+        row.setSessionId(asString(id));
+        row.setSessionData(encoded);
+        row.setLastAccessTime(lastAccessLdt);
+        row.setExpireAt(expireAt);
+        repository.insert(row);
+      } else {
+        existing.setSessionData(encoded);
+        existing.setLastAccessTime(lastAccessLdt);
+        existing.setExpireAt(expireAt);
+        repository.updateById(existing);
+      }
+    } catch (Exception e) {
+      log.warn("Failed to persist session {}: {}", id, e.getMessage());
+    }
+  }
+
+  private static String asString(Serializable id) {
+    return id == null ? null : id.toString();
+  }
+
+  /** Helper used by {@link ScheduledCleanupTask} to query expired rows for cleanup. */
+  public java.util.List<ShiroSession> findExpired(LocalDateTime cutoff) {
+    return repository.selectList(new QueryWrapper<ShiroSession>().lt("expire_at", cutoff));
+  }
+}

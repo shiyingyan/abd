@@ -50,7 +50,8 @@ public class BuildService {
       String username,
       java.util.List<String> modulePaths,
       java.util.List<Long> envIds,
-      Boolean autoDeploy) {
+      Boolean autoDeploy,
+      boolean skipGitPull) {
     ProjectConfig snapshot = configService.getSnapshot(configId);
     if (snapshot == null) {
       return null;
@@ -63,6 +64,7 @@ public class BuildService {
     task.setSelectedEnvIds(envIds);
     // For LOCAL mode, always auto-deploy; for REMOTE, use the provided value
     task.setAutoDeploy("LOCAL".equals(buildMode) || autoDeploy == null || autoDeploy);
+    task.setSkipGitPull(skipGitPull);
 
     // Create log file
     String logFileName =
@@ -106,13 +108,18 @@ public class BuildService {
         }
         File repoDir = new File(userGitDir);
         boolean repoExists = repoDir.exists() && new File(repoDir, ".git").exists();
-        if (repoExists) {
-          logLine(task, logWriter, "=== Git pull (repository already exists) ===");
+        if (task.isSkipGitPull()) {
+          logLine(task, logWriter, "=== 跳过 Git pull（使用本地已有代码） ===");
+          logLine(task, logWriter, "Git directory: " + userGitDir);
         } else {
-          logLine(task, logWriter, "=== Git clone (repository not found, will clone) ===");
+          if (repoExists) {
+            logLine(task, logWriter, "=== Git pull (repository already exists) ===");
+          } else {
+            logLine(task, logWriter, "=== Git clone (repository not found, will clone) ===");
+          }
+          logLine(task, logWriter, "Git directory: " + userGitDir);
+          repoDir = gitService.cloneOrPull(config, userGitDir);
         }
-        logLine(task, logWriter, "Git directory: " + userGitDir);
-        repoDir = gitService.cloneOrPull(config, userGitDir);
         logLine(task, logWriter, "Git repository ready: " + repoDir.getAbsolutePath());
 
         // Step 2: Build command with language version switching
@@ -484,9 +491,19 @@ public class BuildService {
     return emitter;
   }
 
-  /** Get all active tasks. */
-  public java.util.Collection<BuildTask> listTasks() {
-    return taskMap.values();
+  /** Get all active tasks, ordered by start time descending (newest first). */
+  public java.util.List<BuildTask> listTasks() {
+    java.util.List<BuildTask> list = new java.util.ArrayList<>(taskMap.values());
+    list.sort(
+        (a, b) -> {
+          java.time.LocalDateTime ta = a.getStartTime();
+          java.time.LocalDateTime tb = b.getStartTime();
+          if (ta == null && tb == null) return 0;
+          if (ta == null) return 1;
+          if (tb == null) return -1;
+          return tb.compareTo(ta);
+        });
+    return list;
   }
 
   /** Read the last tailLines of a log file. Returns content, hasMore, totalLines. */
@@ -590,5 +607,19 @@ public class BuildService {
       result.put("totalLines", 0);
     }
     return result;
+  }
+
+  /** Check whether a project's local repository has uncommitted changes. */
+  public boolean hasUncommittedChanges(Long configId) {
+    ProjectConfig config = configService.getSnapshot(configId);
+    if (config == null) {
+      return false;
+    }
+    String projectDir = config.getProjectDir();
+    if (projectDir == null || projectDir.trim().isEmpty()) {
+      return false;
+    }
+    File repoDir = new File(projectDir.trim());
+    return gitService.hasUncommittedChanges(repoDir);
   }
 }

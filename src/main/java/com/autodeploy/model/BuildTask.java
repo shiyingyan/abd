@@ -22,6 +22,7 @@ public class BuildTask {
   private List<String> selectedModules;
   private List<Long> selectedEnvIds;
   private Boolean autoDeploy;
+  private boolean skipGitPull;
 
   // REMOTE mode artifact tracking
   private Map<String, String> remoteArtifactPaths; // modulePath -> absolute path on build server
@@ -191,6 +192,14 @@ public class BuildTask {
 
   public void setAutoDeploy(Boolean autoDeploy) {
     this.autoDeploy = autoDeploy;
+  }
+
+  public boolean isSkipGitPull() {
+    return skipGitPull;
+  }
+
+  public void setSkipGitPull(boolean skipGitPull) {
+    this.skipGitPull = skipGitPull;
   }
 
   public Map<String, String> getRemoteArtifactPaths() {
