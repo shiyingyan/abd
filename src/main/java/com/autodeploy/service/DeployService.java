@@ -282,15 +282,15 @@ public class DeployService {
             File[] children = artifact.listFiles();
             if (children != null) {
               for (File child : children) {
-                logConsumer.accept(
-                    "上传: " + child.getName() + " -> " + host + ":" + targetPath);
+                logConsumer.accept("上传: " + child.getName() + " -> " + host + ":" + targetPath);
                 sshService.uploadFile(
                     host, port, user, password, child.getAbsolutePath(), targetPath);
               }
             }
           } else {
             logConsumer.accept("上传目录: " + artifact.getName() + " -> " + host + ":" + targetPath);
-            sshService.uploadFile(host, port, user, password, artifact.getAbsolutePath(), targetPath);
+            sshService.uploadFile(
+                host, port, user, password, artifact.getAbsolutePath(), targetPath);
           }
         } else {
           logConsumer.accept("未知产物类型，跳过: " + artifact.getAbsolutePath());

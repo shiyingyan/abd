@@ -124,4 +124,14 @@ public class ShiroConfig {
     registration.setOrder(1);
     return registration;
   }
+
+  @Bean
+  public FilterRegistrationBean<SessionExpiryFilter> sessionExpiryFilterRegistration() {
+    FilterRegistrationBean<SessionExpiryFilter> registration = new FilterRegistrationBean<>();
+    registration.setFilter(new SessionExpiryFilter());
+    registration.addUrlPatterns("/*");
+    registration.setDispatcherTypes(DispatcherType.REQUEST);
+    registration.setOrder(2);
+    return registration;
+  }
 }

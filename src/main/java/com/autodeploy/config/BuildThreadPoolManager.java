@@ -62,6 +62,10 @@ public class BuildThreadPoolManager {
     return pool.getActiveCount();
   }
 
+  public int getMaxSize() {
+    return pool.getMaximumPoolSize();
+  }
+
   public int getQueueSize() {
     return pool.getQueue().size();
   }

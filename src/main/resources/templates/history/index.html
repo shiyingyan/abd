@@ -42,7 +42,7 @@
             <div class="card">
                 <div class="card-body">
                     <table class="table table-sm">
-                        <thead><tr><th>ID</th><th>项目</th><th>版本</th><th>仓库</th><th>构建时间</th><th>用户</th><th>状态</th><th>模式</th><th>部署</th><th>操作</th></tr></thead>
+                        <thead><tr><th>ID</th><th>项目</th><th>版本</th><th>仓库</th><th>构建时间</th><th>用户</th><th>状态</th><th>模式</th><th>部署</th><th>队列任务</th><th>操作</th></tr></thead>
                         <tbody>
                             <tr th:each="r : ${records}">
                                 <td th:text="${r.id}"></td>
@@ -59,11 +59,15 @@
                                     <span class="badge" th:classappend="${r.deployStatus == 'SUCCESS' ? 'bg-success' : (r.deployStatus == 'FAIL' ? 'bg-danger' : 'bg-warning')}" th:text="${r.deployStatus}"></span>
                                 </td>
                                 <td>
+                                    <a th:if="${r.queueTaskId != null}" th:href="@{/build}" th:text="'#' + ${r.queueTaskId}" class="text-decoration-none"></a>
+                                    <span th:if="${r.queueTaskId == null}" class="text-muted">-</span>
+                                </td>
+                                <td>
                                     <button class="btn btn-sm btn-outline-info" th:onclick="'showDetail(' + ${r.id} + ')'">详情</button>
                                     <button class="btn btn-sm btn-outline-secondary" th:onclick="'showLog(' + ${r.id} + ')'">日志</button>
                                 </td>
                             </tr>
-                            <tr th:if="${records.isEmpty()}"><td colspan="10" class="text-center text-muted">暂无构建记录</td></tr>
+                            <tr th:if="${records.isEmpty()}"><td colspan="11" class="text-center text-muted">暂无构建记录</td></tr>
                         </tbody>
                     </table>
                     <!-- Pagination -->

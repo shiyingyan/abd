@@ -197,9 +197,210 @@ public class GitService {
       Status status = git.status().call();
       return status.hasUncommittedChanges();
     } catch (Exception e) {
-      log.warn("Failed to check uncommitted changes in {}: {}", repoDir.getAbsolutePath(), e.getMessage());
+      log.warn(
+          "Failed to check uncommitted changes in {}: {}",
+          repoDir.getAbsolutePath(),
+          e.getMessage());
       return false;
     }
+  }
+
+  /**
+   * Get the current branch name of a local repository. Returns null if the directory is not a git
+   * repository or any error occurs.
+   */
+  public String getCurrentBranch(File repoDir) {
+    if (repoDir == null || !repoDir.isDirectory() || !new File(repoDir, ".git").isDirectory()) {
+      return null;
+    }
+    try (Git git = Git.open(repoDir)) {
+      return git.getRepository().getBranch();
+    } catch (Exception e) {
+      log.warn(
+          "Failed to get current branch from {}: {}", repoDir.getAbsolutePath(), e.getMessage());
+      return null;
+    }
+  }
+
+  /**
+   * List available remote branches for a repository. Returns a list of branch names (without
+   * refs/remotes/origin/ prefix). Returns empty list if the directory is not a git repository or
+   * any error occurs.
+   */
+  public java.util.List<String> listBranches(ProjectConfig config, String workDir)
+      throws Exception {
+    java.util.List<String> branches = new java.util.ArrayList<>();
+    File repoDir = new File(workDir);
+
+    if (!repoDir.exists() || !new File(repoDir, ".git").exists()) {
+      return branches;
+    }
+
+    try (Git git = Git.open(repoDir)) {
+      configureGitFromSystemSettings(git.getRepository());
+
+      // Fetch latest remote refs
+      UsernamePasswordCredentialsProvider creds = resolveCredentials(config);
+      org.eclipse.jgit.api.FetchCommand fetchCmd = git.fetch();
+      if (creds != null) {
+        fetchCmd.setCredentialsProvider(creds);
+      }
+      fetchCmd.call();
+
+      // List remote branches
+      java.util.List<org.eclipse.jgit.lib.Ref> refs =
+          git.branchList()
+              .setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.REMOTE)
+              .call();
+      for (org.eclipse.jgit.lib.Ref ref : refs) {
+        String name = ref.getName();
+        // Strip refs/remotes/origin/ prefix
+        if (name.startsWith("refs/remotes/origin/")) {
+          name = name.substring("refs/remotes/origin/".length());
+          // Skip HEAD pointer
+          if (!"HEAD".equals(name)) {
+            branches.add(name);
+          }
+        }
+      }
+    }
+    java.util.Collections.sort(branches);
+    return branches;
+  }
+
+  /**
+   * Checkout (switch to) a different branch in the local repository. Returns true if successful,
+   * false otherwise.
+   */
+  public boolean checkoutBranch(File repoDir, String branch) {
+    if (repoDir == null || !repoDir.isDirectory() || !new File(repoDir, ".git").isDirectory()) {
+      return false;
+    }
+    try (Git git = Git.open(repoDir)) {
+      configureGitFromSystemSettings(git.getRepository());
+      log.info("Checking out branch {} in {}", branch, repoDir.getAbsolutePath());
+      git.checkout().setName(branch).setCreateBranch(false).call();
+      return true;
+    } catch (Exception e) {
+      log.warn(
+          "Failed to checkout branch {} in {}: {}",
+          branch,
+          repoDir.getAbsolutePath(),
+          e.getMessage());
+      return false;
+    }
+  }
+
+  /**
+   * Create a git worktree for the given project and branch. The worktree is created in a temp
+   * directory. Uses command-line git since JGit does not support worktree. Returns the absolute
+   * path of the worktree directory.
+   */
+  public String createWorktree(ProjectConfig config, String branch) throws Exception {
+    String projectDir = config.getProjectDir();
+    if (projectDir == null || projectDir.trim().isEmpty()) {
+      throw new IllegalStateException("项目目录未配置，无法创建 worktree");
+    }
+
+    File repoDir = new File(projectDir.trim());
+    if (!repoDir.exists() || !new File(repoDir, ".git").exists()) {
+      throw new IllegalStateException("项目 Git 仓库不存在，请先执行一次常规构建以初始化仓库");
+    }
+
+    // Fetch latest in main repo first
+    try (Git git = Git.open(repoDir)) {
+      configureGitFromSystemSettings(git.getRepository());
+      UsernamePasswordCredentialsProvider creds = resolveCredentials(config);
+      org.eclipse.jgit.api.FetchCommand fetchCmd = git.fetch();
+      if (creds != null) {
+        fetchCmd.setCredentialsProvider(creds);
+      }
+      fetchCmd.call();
+    }
+
+    // Generate unique worktree path
+    String tempBase = System.getProperty("java.io.tmpdir");
+    String safeBranch = branch.replaceAll("[^a-zA-Z0-9_-]", "_");
+    String worktreeName =
+        config.getProjectName()
+            + "_"
+            + java.util.UUID.randomUUID().toString().substring(0, 8)
+            + "_"
+            + safeBranch;
+    String worktreePath =
+        java.nio.file.Paths.get(tempBase, "autodeploy-worktrees", worktreeName).toString();
+
+    // Ensure parent directory exists
+    new File(worktreePath).getParentFile().mkdirs();
+
+    // Use origin/<branch> to avoid "already checked out" conflict with the main repo.
+    // This creates a detached-HEAD worktree, which is fine for building.
+    ProcessBuilder pb =
+        new ProcessBuilder("git", "worktree", "add", worktreePath, "origin/" + branch);
+    pb.directory(repoDir);
+    pb.redirectErrorStream(true);
+    Process proc = pb.start();
+    String output = readProcessOutput(proc);
+    int exit = proc.waitFor();
+    if (exit != 0) {
+      throw new IllegalStateException("git worktree add 失败 (exit=" + exit + "): " + output);
+    }
+
+    log.info("Created worktree at {} for branch {}", worktreePath, branch);
+    return worktreePath;
+  }
+
+  /** Remove a git worktree directory. */
+  public void removeWorktree(String worktreePath) {
+    if (worktreePath == null || worktreePath.isEmpty()) return;
+    try {
+      File worktreeDir = new File(worktreePath);
+      if (!worktreeDir.exists()) return;
+
+      // Find main repo by reading the .git file in the worktree
+      File gitFile = new File(worktreeDir, ".git");
+      String mainRepoPath = null;
+      if (gitFile.isFile()) {
+        String content = new String(java.nio.file.Files.readAllBytes(gitFile.toPath())).trim();
+        if (content.startsWith("gitdir:")) {
+          String gitDir = content.substring("gitdir:".length()).trim();
+          // gitDir points to main/.git/worktrees/name — go up two levels
+          mainRepoPath = new File(gitDir).getParentFile().getParentFile().getAbsolutePath();
+        }
+      }
+
+      if (mainRepoPath != null) {
+        ProcessBuilder pb =
+            new ProcessBuilder("git", "worktree", "remove", "--force", worktreePath);
+        pb.directory(new File(mainRepoPath));
+        pb.redirectErrorStream(true);
+        Process proc = pb.start();
+        readProcessOutput(proc);
+        proc.waitFor();
+      }
+
+      // Fallback: delete directory if git worktree remove failed or wasn't possible
+      File wtDir = new File(worktreePath);
+      if (wtDir.exists()) {
+        deleteDirectory(wtDir);
+      }
+
+      log.info("Removed worktree at {}", worktreePath);
+    } catch (Exception e) {
+      log.warn("Failed to remove worktree at {}: {}", worktreePath, e.getMessage());
+    }
+  }
+
+  private String readProcessOutput(Process proc) throws Exception {
+    StringBuilder sb = new StringBuilder();
+    try (java.io.BufferedReader reader =
+        new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream(), "UTF-8"))) {
+      String line;
+      while ((line = reader.readLine()) != null) {
+        sb.append(line).append("\n");
+      }
+    }
+    return sb.toString();
   }
 
   /** Clone for module scanning. Uses single-branch clone for efficiency. */

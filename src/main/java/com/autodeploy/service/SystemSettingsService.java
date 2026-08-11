@@ -29,6 +29,7 @@ public class SystemSettingsService {
   public static final String KEY_BUILD_SERVER_PORT = "build_server_port";
   public static final String KEY_BUILD_SERVER_USER = "build_server_user";
   public static final String KEY_BUILD_SERVER_AUTH_ENV = "build_server_auth_env_key";
+  public static final String KEY_QUEUE_SCHEDULER_ALWAYS_ON = "queue_scheduler_always_on";
 
   @Autowired private SystemSettingRepository settingRepository;
 
@@ -105,6 +106,15 @@ public class SystemSettingsService {
     save(KEY_BUILD_SERVER_PORT, String.valueOf(port), "构建服务器SSH端口");
     save(KEY_BUILD_SERVER_USER, user, "构建服务器用户名");
     save(KEY_BUILD_SERVER_AUTH_ENV, authEnvKey, "构建服务器认证环境变量名");
+  }
+
+  public boolean isQueueSchedulerAlwaysOn() {
+    return "true".equals(get(KEY_QUEUE_SCHEDULER_ALWAYS_ON));
+  }
+
+  @Transactional
+  public void saveQueueSchedulerAlwaysOn(boolean alwaysOn) {
+    save(KEY_QUEUE_SCHEDULER_ALWAYS_ON, String.valueOf(alwaysOn), "构建任务调度常驻开关");
   }
 
   // ===== Env Var Ref management =====

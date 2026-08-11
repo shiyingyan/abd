@@ -28,6 +28,41 @@
                 </div>
             </div>
 
+            <!-- Queue Scheduler -->
+            <div class="card mb-3">
+                <div class="card-header">构建任务调度</div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <span class="me-3">调度状态：</span>
+                        <span th:if="${schedulerActive}" class="badge bg-success">运行中</span>
+                        <span th:unless="${schedulerActive}" class="badge bg-secondary">已停止</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                        <form th:action="@{/settings/scheduler/start}" method="post" th:if="${!schedulerActive}" class="m-0">
+                            <button type="submit" class="btn btn-sm btn-success">开始调度</button>
+                        </form>
+                        <form th:action="@{/settings/scheduler/stop}" method="post" th:if="${schedulerActive && !schedulerAlwaysOn}" class="m-0">
+                            <button type="submit" class="btn btn-sm btn-outline-warning">停止调度</button>
+                        </form>
+                    </div>
+                    <form th:action="@{/settings/scheduler/always-on}" method="post" class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="alwaysOn"
+                                       value="true" id="schedulerAlwaysOn"
+                                       th:checked="${schedulerAlwaysOn}">
+                                <label class="form-check-label" for="schedulerAlwaysOn">
+                                    常驻模式（开启后调度永不停止）
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-sm btn-primary">保存</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
             <!-- Retention -->
             <div class="card mb-3">
                 <div class="card-header">保留策略</div>

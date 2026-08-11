@@ -1,5 +1,6 @@
 package com.autodeploy.controller;
 
+import com.autodeploy.service.BuildQueueService;
 import com.autodeploy.service.DeployService;
 import com.autodeploy.service.SystemSettingsService;
 import java.util.HashMap;
@@ -18,6 +19,7 @@ public class SettingsController {
   @Autowired private SystemSettingsService settingsService;
 
   @Autowired private DeployService deployService;
+  @Autowired private BuildQueueService buildQueueService;
 
   // Simple cache for env var listing (60-second TTL)
   private List<String> cachedEnvVars;
@@ -43,6 +45,8 @@ public class SettingsController {
         "buildServerAuthEnv", settingsService.get(SystemSettingsService.KEY_BUILD_SERVER_AUTH_ENV));
     model.addAttribute("envVarRefs", settingsService.listEnvVarRefs());
     model.addAttribute("envVarStatuses", settingsService.checkEnvVarStatus());
+    model.addAttribute("schedulerActive", buildQueueService.isSchedulingActive());
+    model.addAttribute("schedulerAlwaysOn", settingsService.isQueueSchedulerAlwaysOn());
     return "settings/index";
   }
 
@@ -97,6 +101,28 @@ public class SettingsController {
       cacheTime = now;
     }
     return cachedEnvVars;
+  }
+
+  @PostMapping("/settings/scheduler/start")
+  public String startScheduler() {
+    buildQueueService.startScheduling();
+    return "redirect:/settings";
+  }
+
+  @PostMapping("/settings/scheduler/stop")
+  public String stopScheduler() {
+    buildQueueService.stopScheduling();
+    return "redirect:/settings";
+  }
+
+  @PostMapping("/settings/scheduler/always-on")
+  public String saveSchedulerAlwaysOn(
+      @RequestParam(required = false, defaultValue = "false") boolean alwaysOn) {
+    settingsService.saveQueueSchedulerAlwaysOn(alwaysOn);
+    if (alwaysOn) {
+      buildQueueService.startScheduling();
+    }
+    return "redirect:/settings";
   }
 
   @PostMapping("/api/settings/test-build-server")

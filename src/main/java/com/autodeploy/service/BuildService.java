@@ -51,7 +51,8 @@ public class BuildService {
       java.util.List<String> modulePaths,
       java.util.List<Long> envIds,
       Boolean autoDeploy,
-      boolean skipGitPull) {
+      boolean skipGitPull,
+      String selectedBranch) {
     ProjectConfig snapshot = configService.getSnapshot(configId);
     if (snapshot == null) {
       return null;
@@ -65,6 +66,7 @@ public class BuildService {
     // For LOCAL mode, always auto-deploy; for REMOTE, use the provided value
     task.setAutoDeploy("LOCAL".equals(buildMode) || autoDeploy == null || autoDeploy);
     task.setSkipGitPull(skipGitPull);
+    task.setSelectedBranch(selectedBranch);
 
     // Create log file
     String logFileName =
@@ -88,6 +90,10 @@ public class BuildService {
     ProjectConfig config = task.getConfigSnapshot();
     task.setStatus(BuildTaskStatus.BUILDING);
 
+    // Track original branch and repo dir for restoration after build+deploy
+    String originalBranch = null;
+    File repoDir = null;
+
     try (PrintWriter logWriter =
         new PrintWriter(
             // Always UTF-8: log files are read back as UTF-8 by readTailFromFile and streamed to
@@ -95,6 +101,7 @@ public class BuildService {
             new OutputStreamWriter(new FileOutputStream(task.getLogFilePath()), "UTF-8"), true)) {
 
       try {
+
         // Step 1: Git clone/pull (use configured projectDir, or per-user temp directory)
         String userGitDir;
         if (config.getProjectDir() != null && !config.getProjectDir().trim().isEmpty()) {
@@ -106,12 +113,53 @@ public class BuildService {
                       tempBase, "autodeploy", task.getCurrentUser(), config.getProjectName())
                   .toString();
         }
-        File repoDir = new File(userGitDir);
+        repoDir = new File(userGitDir);
         boolean repoExists = repoDir.exists() && new File(repoDir, ".git").exists();
         if (task.isSkipGitPull()) {
           logLine(task, logWriter, "=== 跳过 Git pull（使用本地已有代码） ===");
           logLine(task, logWriter, "Git directory: " + userGitDir);
         } else {
+          // Handle branch switching if a different branch is selected
+          String selectedBranch = task.getSelectedBranch();
+          if (repoExists && selectedBranch != null && !selectedBranch.trim().isEmpty()) {
+            String currentBranch = gitService.getCurrentBranch(repoDir);
+            if (currentBranch != null && !currentBranch.equals(selectedBranch)) {
+              logLine(
+                  task, logWriter, "=== 分支切换: " + currentBranch + " -> " + selectedBranch + " ===");
+              // Check for uncommitted changes before switching
+              if (gitService.hasUncommittedChanges(repoDir)) {
+                String errorMsg = "本地仓库有未提交的修改，无法切换到分支 " + selectedBranch + "。请先提交或暂存代码。";
+                logLine(task, logWriter, "=== 构建终止: " + errorMsg + " ===");
+                task.setStatus(BuildTaskStatus.FAILED);
+                task.setErrorMessage(errorMsg);
+                saveBuildRecord(task, "FAIL", "FAIL");
+                return;
+              }
+              // Record original branch for restoration after build+deploy
+              originalBranch = currentBranch;
+              // Checkout the selected branch
+              boolean checkoutOk = gitService.checkoutBranch(repoDir, selectedBranch);
+              if (!checkoutOk) {
+                String errorMsg = "切换到分支 " + selectedBranch + " 失败";
+                logLine(task, logWriter, "=== 构建终止: " + errorMsg + " ===");
+                task.setStatus(BuildTaskStatus.FAILED);
+                task.setErrorMessage(errorMsg);
+                saveBuildRecord(task, "FAIL", "FAIL");
+                return;
+              }
+              // Override config's branch so cloneOrPull stays on selected branch
+              config.setGitBranch(selectedBranch);
+              logLine(
+                  task,
+                  logWriter,
+                  "已切换到分支: " + selectedBranch + "（构建完成后将切回 " + originalBranch + "）");
+            } else if (currentBranch != null && currentBranch.equals(selectedBranch)) {
+              logLine(task, logWriter, "=== 当前分支与目标分支一致: " + currentBranch + " ===");
+              // Ensure config branch matches
+              config.setGitBranch(selectedBranch);
+            }
+          }
+
           if (repoExists) {
             logLine(task, logWriter, "=== Git pull (repository already exists) ===");
           } else {
@@ -300,6 +348,199 @@ public class BuildService {
       task.pushLog("Failed to create log file: " + e.getMessage());
       saveBuildRecord(task, "FAIL", "FAIL");
     } finally {
+      // Restore original branch if it was changed for this build
+      if (originalBranch != null && repoDir != null && repoDir.isDirectory()) {
+        try {
+          gitService.checkoutBranch(repoDir, originalBranch);
+          log.info("Restored branch to {} after build", originalBranch);
+        } catch (Exception e) {
+          log.warn("Failed to restore branch to {}: {}", originalBranch, e.getMessage());
+        }
+      }
+      task.setEndTime(LocalDateTime.now());
+      task.completeEmitters();
+    }
+  }
+
+  /**
+   * Start a build using a git worktree (isolated working directory). The worktree already has the
+   * correct branch checked out, so no clone/pull or branch switching is needed.
+   */
+  public String startBuildFromWorktree(
+      ProjectConfig snapshot,
+      String buildMode,
+      String username,
+      java.util.List<String> modulePaths,
+      java.util.List<Long> envIds,
+      Boolean autoDeploy,
+      String selectedBranch,
+      String worktreePath,
+      Long queueTaskId) {
+    String taskId = UUID.randomUUID().toString().substring(0, 8);
+    BuildTask task = new BuildTask(taskId, snapshot, buildMode, username);
+    task.setStartTime(LocalDateTime.now());
+    task.setSelectedModules(modulePaths);
+    task.setSelectedEnvIds(envIds);
+    task.setAutoDeploy("LOCAL".equals(buildMode) || autoDeploy == null || autoDeploy);
+    task.setSelectedBranch(selectedBranch);
+    task.setQueueTaskId(queueTaskId);
+
+    String logFileName =
+        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+            + "_"
+            + snapshot.getProjectName()
+            + "_"
+            + taskId
+            + ".log";
+    task.setLogFilePath(Paths.get(logsDir, logFileName).toString());
+
+    taskMap.put(taskId, task);
+    poolManager.submit(() -> executeBuildWithWorktree(task, worktreePath));
+
+    return taskId;
+  }
+
+  /** Execute build using a worktree directory (no git clone/pull, no branch switching). */
+  private void executeBuildWithWorktree(BuildTask task, String worktreePath) {
+    ProjectConfig config = task.getConfigSnapshot();
+    task.setStatus(BuildTaskStatus.BUILDING);
+
+    try (PrintWriter logWriter =
+        new PrintWriter(
+            new OutputStreamWriter(new FileOutputStream(task.getLogFilePath()), "UTF-8"), true)) {
+
+      try {
+        File repoDir = new File(worktreePath);
+        logLine(task, logWriter, "=== 使用 worktree 构建 ===");
+        logLine(task, logWriter, "Worktree: " + worktreePath);
+        logLine(task, logWriter, "分支: " + task.getSelectedBranch());
+
+        // Determine working directory
+        File workDir;
+        if (config.getBuildWorkDir() != null && !config.getBuildWorkDir().trim().isEmpty()) {
+          workDir = new File(repoDir, config.getBuildWorkDir().trim());
+        } else {
+          workDir = repoDir;
+        }
+
+        // Build command
+        String buildCmd =
+            runtimeService.buildFullCommand(
+                LanguageType.fromString(config.getLanguageType()),
+                config.getLanguageVersion(),
+                config.getBuildCommand(),
+                config.getCustomInstallDir());
+
+        // npm install for Node projects
+        if ("NODE".equalsIgnoreCase(config.getLanguageType())) {
+          File packageJson = new File(workDir, "package.json");
+          File nodeModules = new File(workDir, "node_modules");
+          boolean needsInstall = false;
+
+          if (packageJson.isFile()) {
+            if (!nodeModules.isDirectory()) {
+              needsInstall = true;
+              logLine(task, logWriter, "node_modules not found, npm install required");
+            } else if (packageJson.lastModified() > nodeModules.lastModified()) {
+              needsInstall = true;
+              logLine(task, logWriter, "package.json has changed, npm install required");
+            }
+          }
+
+          if (needsInstall) {
+            String npmInstallCmd =
+                runtimeService.buildFullCommand(
+                    LanguageType.fromString(config.getLanguageType()),
+                    config.getLanguageVersion(),
+                    "npm install",
+                    config.getCustomInstallDir());
+            logLine(task, logWriter, "=== npm install ===");
+            int installExit = executeProcess(task, logWriter, npmInstallCmd, workDir);
+            if (installExit != 0) {
+              logLine(
+                  task, logWriter, "=== npm install FAILED (exit code: " + installExit + ") ===");
+              task.setStatus(BuildTaskStatus.FAILED);
+              task.setErrorMessage("npm install exit code: " + installExit);
+              saveBuildRecord(task, "FAIL", "FAIL");
+              return;
+            }
+            logLine(task, logWriter, "=== npm install completed ===");
+          }
+        }
+
+        logLine(task, logWriter, "=== Build command: " + buildCmd + " ===");
+        logLine(task, logWriter, "=== Working dir: " + workDir.getAbsolutePath() + " ===");
+
+        int exitCode = executeProcess(task, logWriter, buildCmd, workDir);
+        if (exitCode != 0) {
+          logLine(task, logWriter, "=== Build FAILED (exit code: " + exitCode + ") ===");
+          task.setStatus(BuildTaskStatus.FAILED);
+          task.setErrorMessage("Build exit code: " + exitCode);
+          saveBuildRecord(task, "FAIL", "FAIL");
+          return;
+        }
+        logLine(task, logWriter, "=== Build SUCCESS ===");
+        task.setStatus(BuildTaskStatus.SUCCESS);
+
+        // Deploy
+        Boolean autoDeploy = task.getAutoDeploy();
+        if (autoDeploy == null || autoDeploy) {
+          logLine(task, logWriter, "=== Starting deployment ===");
+          task.setStatus(BuildTaskStatus.DEPLOYING);
+          boolean hasRestart =
+              (config.getStartCommand() != null && !config.getStartCommand().trim().isEmpty())
+                  || (config.getRestartCommand() != null
+                      && !config.getRestartCommand().trim().isEmpty());
+          boolean deployOk =
+              deployService.deploy(
+                  config,
+                  workDir.getAbsolutePath(),
+                  task.getSelectedModules(),
+                  task.getSelectedEnvIds(),
+                  line -> logLine(task, logWriter, line));
+          if (deployOk) {
+            if (!hasRestart) {
+              logLine(task, logWriter, "No restart required");
+            }
+            logLine(task, logWriter, "=== Deploy SUCCESS ===");
+            task.setStatus(BuildTaskStatus.DEPLOY_SUCCESS);
+            saveBuildRecord(task, "SUCCESS", "SUCCESS");
+          } else {
+            logLine(task, logWriter, "=== Deploy FAILED ===");
+            task.setStatus(BuildTaskStatus.DEPLOY_FAILED);
+            task.setErrorMessage("Deploy failed");
+            saveBuildRecord(task, "SUCCESS", "FAIL");
+          }
+        } else {
+          logLine(task, logWriter, "=== 构建完成（未自动部署）===");
+          task.setStagingDir(workDir.getAbsolutePath());
+          saveBuildRecord(task, "SUCCESS", "NONE");
+        }
+      } catch (InterruptedException e) {
+        logLine(task, logWriter, "=== 构建已停止 ===");
+        task.setStatus(BuildTaskStatus.FAILED);
+        task.setErrorMessage("用户手动停止");
+        saveBuildRecord(task, "FAIL", "FAIL");
+      } catch (Exception e) {
+        log.error("Build task {} failed", task.getTaskId(), e);
+        logLine(task, logWriter, "=== Build EXCEPTION ===");
+        java.io.StringWriter sw = new java.io.StringWriter();
+        e.printStackTrace(new java.io.PrintWriter(sw));
+        for (String line : sw.toString().split("\\r?\\n")) {
+          logLine(task, logWriter, line);
+        }
+        task.setStatus(BuildTaskStatus.FAILED);
+        task.setErrorMessage(e.getMessage());
+        saveBuildRecord(task, "FAIL", "FAIL");
+      }
+    } catch (Exception e) {
+      log.error("Build task {} failed to create log file", task.getTaskId(), e);
+      task.setStatus(BuildTaskStatus.FAILED);
+      task.setErrorMessage(e.getMessage());
+      task.bufferLogLine("Failed to create log file: " + e.getMessage());
+      task.pushLog("Failed to create log file: " + e.getMessage());
+      saveBuildRecord(task, "FAIL", "FAIL");
+    } finally {
       task.setEndTime(LocalDateTime.now());
       task.completeEmitters();
     }
@@ -325,6 +566,7 @@ public class BuildService {
     pb.directory(workDir);
     pb.redirectErrorStream(true);
     Process process = pb.start();
+    task.setRunningProcess(process);
 
     try (BufferedReader reader =
         new BufferedReader(
@@ -333,6 +575,11 @@ public class BuildService {
                 isWindows() ? Charset.forName("GBK") : Charset.forName("UTF-8")))) {
       String line;
       while ((line = reader.readLine()) != null) {
+        if (task.isStopRequested()) {
+          process.destroyForcibly();
+          logLine(task, logWriter, "=== 构建已被用户停止 ===");
+          throw new InterruptedException("Build stopped by user");
+        }
         logLine(task, logWriter, line);
       }
     }
@@ -413,7 +660,7 @@ public class BuildService {
   }
 
   /** Save a build record to the database. */
-  private void saveBuildRecord(BuildTask task, String status, String deployStatus) {
+  private BuildRecord saveBuildRecord(BuildTask task, String status, String deployStatus) {
     BuildRecord record = new BuildRecord();
     record.setProjectName(task.getConfigSnapshot().getProjectName());
     record.setVersion(task.getConfigSnapshot().getVersion());
@@ -432,7 +679,13 @@ public class BuildService {
     }
     record.setAutoDeploy(task.getAutoDeploy());
 
+    // Link to queue task if applicable
+    if (task.getQueueTaskId() != null) {
+      record.setQueueTaskId(task.getQueueTaskId());
+    }
+
     buildRecordRepository.insert(record);
+    return record;
   }
 
   /** Get a task by ID. */
@@ -621,5 +874,38 @@ public class BuildService {
     }
     File repoDir = new File(projectDir.trim());
     return gitService.hasUncommittedChanges(repoDir);
+  }
+
+  /** Get the current branch name of a project's local repository. */
+  public String getCurrentBranch(Long configId) {
+    ProjectConfig config = configService.getSnapshot(configId);
+    if (config == null) {
+      return null;
+    }
+    String projectDir = config.getProjectDir();
+    if (projectDir == null || projectDir.trim().isEmpty()) {
+      return null;
+    }
+    File repoDir = new File(projectDir.trim());
+    return gitService.getCurrentBranch(repoDir);
+  }
+
+  /** List available remote branches for a project. */
+  public java.util.List<String> listBranches(Long configId) {
+    ProjectConfig config = configService.getSnapshot(configId);
+    if (config == null) {
+      return java.util.Collections.emptyList();
+    }
+    String projectDir = config.getProjectDir();
+    if (projectDir == null || projectDir.trim().isEmpty()) {
+      return java.util.Collections.emptyList();
+    }
+    try {
+      return gitService.listBranches(config, projectDir.trim());
+    } catch (Exception e) {
+      log.warn(
+          "Failed to list branches for project {}: {}", config.getProjectName(), e.getMessage());
+      return java.util.Collections.emptyList();
+    }
   }
 }

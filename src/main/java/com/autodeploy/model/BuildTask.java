@@ -22,11 +22,21 @@ public class BuildTask {
   private List<String> selectedModules;
   private List<Long> selectedEnvIds;
   private Boolean autoDeploy;
+  private String selectedBranch;
+
+  // Skip git pull option
   private boolean skipGitPull;
 
   // REMOTE mode artifact tracking
   private Map<String, String> remoteArtifactPaths; // modulePath -> absolute path on build server
   private String stagingDir; // local staging directory for downloaded artifacts
+
+  // Queue integration
+  private Long queueTaskId;
+
+  // Process tracking for stop support
+  private volatile Process runningProcess;
+  private volatile boolean stopRequested;
 
   // SSE subscribers for real-time log
   private final CopyOnWriteArrayList<SseEmitter> emitters = new CopyOnWriteArrayList<>();
@@ -194,6 +204,14 @@ public class BuildTask {
     this.autoDeploy = autoDeploy;
   }
 
+  public String getSelectedBranch() {
+    return selectedBranch;
+  }
+
+  public void setSelectedBranch(String selectedBranch) {
+    this.selectedBranch = selectedBranch;
+  }
+
   public boolean isSkipGitPull() {
     return skipGitPull;
   }
@@ -216,5 +234,29 @@ public class BuildTask {
 
   public void setStagingDir(String stagingDir) {
     this.stagingDir = stagingDir;
+  }
+
+  public Long getQueueTaskId() {
+    return queueTaskId;
+  }
+
+  public void setQueueTaskId(Long queueTaskId) {
+    this.queueTaskId = queueTaskId;
+  }
+
+  public Process getRunningProcess() {
+    return runningProcess;
+  }
+
+  public void setRunningProcess(Process runningProcess) {
+    this.runningProcess = runningProcess;
+  }
+
+  public boolean isStopRequested() {
+    return stopRequested;
+  }
+
+  public void requestStop() {
+    this.stopRequested = true;
   }
 }

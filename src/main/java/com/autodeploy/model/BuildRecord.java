@@ -55,6 +55,9 @@ public class BuildRecord {
   @TableField("build_server_host")
   private String buildServerHost;
 
+  @TableField("queue_task_id")
+  private Long queueTaskId;
+
   @TableField("created_at")
   private LocalDateTime createdAt;
 
@@ -184,6 +187,14 @@ public class BuildRecord {
 
   public void setBuildServerHost(String buildServerHost) {
     this.buildServerHost = buildServerHost;
+  }
+
+  public Long getQueueTaskId() {
+    return queueTaskId;
+  }
+
+  public void setQueueTaskId(Long queueTaskId) {
+    this.queueTaskId = queueTaskId;
   }
 
   public LocalDateTime getCreatedAt() {
