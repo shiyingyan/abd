@@ -2,7 +2,6 @@ package com.autodeploy.config;
 
 import com.autodeploy.model.ShiroSession;
 import com.autodeploy.repository.ShiroSessionRepository;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
@@ -87,11 +86,6 @@ public class JdbcSessionDAO implements SessionDAO {
     return Collections.emptyList();
   }
 
-  /** Delete rows whose {@code expire_at} is in the past. */
-  public int purgeExpired() {
-    return repository.deleteExpired(LocalDateTime.now());
-  }
-
   private void save(Session session) {
     Serializable id = session.getId();
     if (id == null) return;
@@ -133,10 +127,5 @@ public class JdbcSessionDAO implements SessionDAO {
 
   private static String asString(Serializable id) {
     return id == null ? null : id.toString();
-  }
-
-  /** Helper used by {@link ScheduledCleanupTask} to query expired rows for cleanup. */
-  public java.util.List<ShiroSession> findExpired(LocalDateTime cutoff) {
-    return repository.selectList(new QueryWrapper<ShiroSession>().lt("expire_at", cutoff));
   }
 }

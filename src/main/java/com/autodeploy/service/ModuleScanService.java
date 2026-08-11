@@ -305,7 +305,7 @@ public class ModuleScanService {
   /** List all modules for a project, ordered by module_path. */
   public List<ProjectModule> listModules(Long projectId) {
     return moduleRepository.selectList(
-        new QueryWrapper<ProjectModule>().eq("project_id", projectId).orderByAsc("module_path"));
+        new QueryWrapper<ProjectModule>().eq("project_id", projectId).orderByDesc("id"));
   }
 
   /** Get scan status for a project. */

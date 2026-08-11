@@ -165,7 +165,7 @@ public class DeployService {
         moduleRepository.selectList(
             new QueryWrapper<ProjectModule>()
                 .eq("project_id", projectId)
-                .orderByAsc("module_path"));
+                .orderByDesc("id"));
     if (modules.isEmpty()) {
       // No scanned modules, use single root module
       List<String> result = new ArrayList<>();

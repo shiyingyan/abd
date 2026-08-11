@@ -60,6 +60,7 @@ public class BuildQueueService {
     }
     if (!orphaned.isEmpty()) {
       log.info("Recovered {} orphaned queue tasks after restart", orphaned.size());
+      startScheduling();
     }
   }
 
@@ -441,7 +442,7 @@ public class BuildQueueService {
     wrapper
         .eq("status", BuildQueueTask.STATUS_QUEUED)
         .orderByDesc("priority")
-        .orderByAsc("submit_time")
+        .orderByDesc("submit_time")
         .last("LIMIT 5");
 
     List<BuildQueueTask> candidates = buildQueueRepository.selectList(wrapper);
@@ -473,6 +474,7 @@ public class BuildQueueService {
 
   private void executeQueuedTask(BuildQueueTask queueTask) {
     String worktreePath = null;
+    boolean useWorktree = false;
     try {
       ProjectConfig snapshot = configService.getSnapshot(queueTask.getConfigId());
       if (snapshot == null) {
@@ -484,24 +486,42 @@ public class BuildQueueService {
         return;
       }
 
-      // Create worktree and start build BEFORE updating DB status,
-      // so the frontend never sees EXECUTING without a buildTaskId.
-      worktreePath = gitService.createWorktree(snapshot, queueTask.getTargetBranch());
-
       List<String> modules = parseList(queueTask.getSelectedModules());
       List<Long> envIds = parseLongList(queueTask.getDeployEnvironments());
 
-      String taskId =
-          buildService.startBuildFromWorktree(
-              snapshot,
-              queueTask.getBuildMode(),
-              queueTask.getUsername(),
-              modules,
-              envIds,
-              queueTask.getAutoDeploy(),
-              queueTask.getTargetBranch(),
-              worktreePath,
-              queueTask.getId());
+      // Check if there are other EXECUTING tasks for the same project
+      useWorktree = hasOtherExecutingTasks(queueTask.getId(), queueTask.getConfigId());
+
+      String taskId;
+      if (useWorktree) {
+        // Create worktree and start build BEFORE updating DB status,
+        // so the frontend never sees EXECUTING without a buildTaskId.
+        worktreePath = gitService.createWorktree(snapshot, queueTask.getTargetBranch());
+
+        taskId =
+            buildService.startBuildFromWorktree(
+                snapshot,
+                queueTask.getBuildMode(),
+                queueTask.getUsername(),
+                modules,
+                envIds,
+                queueTask.getAutoDeploy(),
+                queueTask.getTargetBranch(),
+                worktreePath,
+                queueTask.getId());
+      } else {
+        // No other tasks running for this project, build directly in project directory
+        taskId =
+            buildService.startBuild(
+                snapshot.getId(),
+                queueTask.getBuildMode(),
+                queueTask.getUsername(),
+                modules,
+                envIds,
+                queueTask.getAutoDeploy(),
+                false,
+                queueTask.getTargetBranch());
+      }
 
       // Atomically update: QUEUED → EXECUTING with buildTaskId + worktreePath
       queueTask.setBuildTaskId(taskId);
@@ -519,7 +539,9 @@ public class BuildQueueService {
 
       if (updated == 0) {
         // Task was cancelled or modified while we were preparing
-        gitService.removeWorktree(worktreePath);
+        if (worktreePath != null) {
+          gitService.removeWorktree(worktreePath);
+        }
         return;
       }
 
@@ -566,6 +588,16 @@ public class BuildQueueService {
         gitService.removeWorktree(worktreePath);
       }
     }
+  }
+
+  /** Check if there are other EXECUTING tasks for the same project (excluding current task). */
+  private boolean hasOtherExecutingTasks(Long currentTaskId, Long configId) {
+    QueryWrapper<BuildQueueTask> wrapper = new QueryWrapper<>();
+    wrapper
+        .eq("config_id", configId)
+        .eq("status", BuildQueueTask.STATUS_EXECUTING)
+        .ne("id", currentTaskId);
+    return buildQueueRepository.selectCount(wrapper) > 0;
   }
 
   /** Cancel a queued task. */
@@ -646,10 +678,10 @@ public class BuildQueueService {
           wrapper.orderBy(true, isAsc, "priority");
           break;
         default:
-          wrapper.orderByDesc("priority").orderByAsc("submit_time");
+          wrapper.orderByDesc("id");
       }
     } else {
-      wrapper.orderByDesc("priority").orderByAsc("submit_time");
+      wrapper.orderByDesc("id");
     }
 
     return buildQueueRepository.selectPage(new Page<>(pageNum, pageSize), wrapper);
@@ -661,7 +693,7 @@ public class BuildQueueService {
   }
 
   /** Also clean up worktree for immediate builds after they complete. */
-  @Scheduled(fixedDelay = 30000)
+  @Scheduled(fixedDelay = 3600000)
   public void cleanupCompletedWorktrees() {
     // Check immediate builds (EXECUTING or completed) that have a worktree path
     // and whose build task has finished

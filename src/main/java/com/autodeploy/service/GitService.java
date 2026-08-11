@@ -335,8 +335,10 @@ public class GitService {
 
     // Use origin/<branch> to avoid "already checked out" conflict with the main repo.
     // This creates a detached-HEAD worktree, which is fine for building.
+    // Enable core.longpaths to support long file paths on Windows.
     ProcessBuilder pb =
-        new ProcessBuilder("git", "worktree", "add", worktreePath, "origin/" + branch);
+        new ProcessBuilder(
+            "git", "-c", "core.longpaths=true", "worktree", "add", worktreePath, "origin/" + branch);
     pb.directory(repoDir);
     pb.redirectErrorStream(true);
     Process proc = pb.start();

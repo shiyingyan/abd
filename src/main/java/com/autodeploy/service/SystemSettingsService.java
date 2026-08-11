@@ -6,6 +6,7 @@ import com.autodeploy.repository.EnvVarRefRepository;
 import com.autodeploy.repository.SystemSettingRepository;
 import com.autodeploy.util.EnvVarUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +35,13 @@ public class SystemSettingsService {
   @Autowired private SystemSettingRepository settingRepository;
 
   @Autowired private EnvVarRefRepository envVarRefRepository;
+
+  private volatile boolean queueSchedulerAlwaysOn = false;
+
+  @PostConstruct
+  void loadQueueSchedulerFlag() {
+    queueSchedulerAlwaysOn = "true".equals(get(KEY_QUEUE_SCHEDULER_ALWAYS_ON));
+  }
 
   public String get(String key) {
     SystemSetting setting =
@@ -79,6 +87,9 @@ public class SystemSettingsService {
       settingRepository.insert(setting);
     }
     log.info("System setting updated: {} = {}", key, value);
+    if (KEY_QUEUE_SCHEDULER_ALWAYS_ON.equals(key)) {
+      queueSchedulerAlwaysOn = "true".equals(value);
+    }
   }
 
   @Transactional
@@ -109,7 +120,7 @@ public class SystemSettingsService {
   }
 
   public boolean isQueueSchedulerAlwaysOn() {
-    return "true".equals(get(KEY_QUEUE_SCHEDULER_ALWAYS_ON));
+    return queueSchedulerAlwaysOn;
   }
 
   @Transactional

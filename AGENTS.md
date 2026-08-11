@@ -64,6 +64,7 @@ com.autodeploy
 - **No global exception handler**: No `@ControllerAdvice`. Services return `null` on success or error message strings. Controllers check and add to `Model`.
 - **Field injection**: All services use `@Autowired` field injection, not constructor injection.
 - **Query construction**: Queries are built in services via `QueryWrapper`, not in repositories.
+- **List sorting**: All list queries must use `orderByDesc` by `id` or time field (e.g. `created_at`, `updated_at`, `build_time`) so the newest records appear first. Never use `orderByAsc` for user-facing lists. Exception: build queue processing (`processQueue`) sorts by `priority` DESC then `submit_time` DESC to determine execution order.
 - **Form deletes use GET**: `/config/delete/{id}`, `/environment/delete/{id}`, etc. are GET endpoints, not POST/DELETE.
 - **No CSRF tokens**: Forms lack CSRF protection despite Shiro auth.
 
