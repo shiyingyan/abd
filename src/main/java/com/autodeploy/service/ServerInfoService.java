@@ -119,9 +119,7 @@ public class ServerInfoService {
   public List<ProjectEnvServer> listProjectAssociations(Long projectId) {
     List<ProjectEnvServer> list =
         projectEnvServerRepository.selectList(
-            new QueryWrapper<ProjectEnvServer>()
-                .eq("project_id", projectId)
-                .orderByDesc("id"));
+            new QueryWrapper<ProjectEnvServer>().eq("project_id", projectId).orderByDesc("id"));
     for (ProjectEnvServer pes : list) {
       DeployEnvironment env = environmentRepository.selectById(pes.getEnvironmentId());
       if (env != null) {

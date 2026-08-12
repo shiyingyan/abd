@@ -230,9 +230,23 @@ public class GitService {
   public java.util.List<String> listBranches(ProjectConfig config, String workDir)
       throws Exception {
     java.util.List<String> branches = new java.util.ArrayList<>();
+
+    if (workDir == null || workDir.trim().isEmpty()) {
+      String repoUrl = config.getGitRepoUrl();
+      if (repoUrl != null && !repoUrl.trim().isEmpty()) {
+        return listRemoteBranches(config, repoUrl.trim());
+      }
+      return branches;
+    }
+
     File repoDir = new File(workDir);
 
     if (!repoDir.exists() || !new File(repoDir, ".git").exists()) {
+      // No local clone yet — use ls-remote to list branches from the remote URL
+      String repoUrl = config.getGitRepoUrl();
+      if (repoUrl != null && !repoUrl.trim().isEmpty()) {
+        return listRemoteBranches(config, repoUrl.trim());
+      }
       return branches;
     }
 
@@ -262,6 +276,26 @@ public class GitService {
             branches.add(name);
           }
         }
+      }
+    }
+    java.util.Collections.sort(branches);
+    return branches;
+  }
+
+  /** List remote branches using ls-remote, without requiring a local clone. */
+  private java.util.List<String> listRemoteBranches(ProjectConfig config, String repoUrl)
+      throws Exception {
+    java.util.List<String> branches = new java.util.ArrayList<>();
+    org.eclipse.jgit.api.LsRemoteCommand lsRemote = Git.lsRemoteRepository().setRemote(repoUrl);
+    UsernamePasswordCredentialsProvider creds = resolveCredentials(config);
+    if (creds != null) {
+      lsRemote.setCredentialsProvider(creds);
+    }
+    java.util.Collection<org.eclipse.jgit.lib.Ref> refs = lsRemote.call();
+    for (org.eclipse.jgit.lib.Ref ref : refs) {
+      String name = ref.getName();
+      if (name.startsWith("refs/heads/")) {
+        branches.add(name.substring("refs/heads/".length()));
       }
     }
     java.util.Collections.sort(branches);
@@ -338,7 +372,13 @@ public class GitService {
     // Enable core.longpaths to support long file paths on Windows.
     ProcessBuilder pb =
         new ProcessBuilder(
-            "git", "-c", "core.longpaths=true", "worktree", "add", worktreePath, "origin/" + branch);
+            "git",
+            "-c",
+            "core.longpaths=true",
+            "worktree",
+            "add",
+            worktreePath,
+            "origin/" + branch);
     pb.directory(repoDir);
     pb.redirectErrorStream(true);
     Process proc = pb.start();

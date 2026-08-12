@@ -14,6 +14,8 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.shiro.session.Session;
 import org.apache.shiro.session.mgt.SimpleSession;
 import org.apache.shiro.session.mgt.eis.SessionDAO;
@@ -25,7 +27,8 @@ import org.springframework.stereotype.Component;
 /**
  * Persists Shiro sessions to the {@code shiro_session} table so users don't have to log in again
  * after an application restart. Sessions are Java-serialized and then Base64-encoded for safe
- * storage in a {@code LONGTEXT} column.
+ * storage in a {@code LONGTEXT} column. An in-memory cache avoids deserializing from the database
+ * on every request.
  */
 @Component
 public class JdbcSessionDAO implements SessionDAO {
@@ -33,6 +36,8 @@ public class JdbcSessionDAO implements SessionDAO {
   private static final Logger log = LoggerFactory.getLogger(JdbcSessionDAO.class);
 
   @Autowired private ShiroSessionRepository repository;
+
+  private final Map<String, Session> sessionCache = new ConcurrentHashMap<>();
 
   @Override
   public Serializable create(Session session) {
@@ -42,15 +47,28 @@ public class JdbcSessionDAO implements SessionDAO {
       ((SimpleSession) session).setId(id);
     }
     save(session);
+    sessionCache.put(asString(id), session);
     return id;
   }
 
   @Override
   public Session readSession(Serializable sessionId) {
-    ShiroSession row = repository.selectById(asString(sessionId));
+    String id = asString(sessionId);
+
+    Session cached = sessionCache.get(id);
+    if (cached != null) {
+      if (cached instanceof SimpleSession && ((SimpleSession) cached).isExpired()) {
+        sessionCache.remove(id);
+        repository.deleteById(id);
+        return null;
+      }
+      return cached;
+    }
+
+    ShiroSession row = repository.selectById(id);
     if (row == null || row.getSessionData() == null) return null;
     if (row.getExpireAt() != null && row.getExpireAt().isBefore(LocalDateTime.now())) {
-      repository.deleteById(asString(sessionId));
+      repository.deleteById(id);
       return null;
     }
     try {
@@ -58,9 +76,10 @@ public class JdbcSessionDAO implements SessionDAO {
       try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(data))) {
         Session session = (Session) ois.readObject();
         if (session instanceof SimpleSession && ((SimpleSession) session).isExpired()) {
-          repository.deleteById(asString(sessionId));
+          repository.deleteById(id);
           return null;
         }
+        sessionCache.put(id, session);
         return session;
       }
     } catch (Exception e) {
@@ -71,18 +90,26 @@ public class JdbcSessionDAO implements SessionDAO {
 
   @Override
   public void update(Session session) {
+    if (session == null || session.getId() == null) return;
+    String id = asString(session.getId());
     save(session);
+    if (session instanceof SimpleSession && ((SimpleSession) session).isExpired()) {
+      sessionCache.remove(id);
+    } else {
+      sessionCache.put(id, session);
+    }
   }
 
   @Override
   public void delete(Session session) {
     if (session == null || session.getId() == null) return;
-    repository.deleteById(asString(session.getId()));
+    String id = asString(session.getId());
+    sessionCache.remove(id);
+    repository.deleteById(id);
   }
 
   @Override
   public Collection<Session> getActiveSessions() {
-    // Not used for anything critical; returning empty keeps it cheap.
     return Collections.emptyList();
   }
 

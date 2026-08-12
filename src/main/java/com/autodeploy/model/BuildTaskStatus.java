@@ -20,6 +20,6 @@ public enum BuildTaskStatus {
   }
 
   public boolean isFinished() {
-    return this == SUCCESS || this == FAILED;
+    return this == SUCCESS || this == FAILED || this == DEPLOY_SUCCESS || this == DEPLOY_FAILED;
   }
 }

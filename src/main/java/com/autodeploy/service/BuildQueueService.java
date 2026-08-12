@@ -295,6 +295,9 @@ public class BuildQueueService {
       result.put("taskId", taskId);
       result.put("queueTaskId", queueTask.getId());
       result.put("type", "immediate");
+
+      // Poll build completion in background and update queue task status
+      pollBuildCompletion(queueTask, taskId, worktreePath);
     } catch (Exception e) {
       log.error("Failed to start immediate build", e);
       if (worktreePath != null) {
@@ -357,11 +360,88 @@ public class BuildQueueService {
       result.put("taskId", taskId);
       result.put("queueTaskId", queueTask.getId());
       result.put("type", "direct");
+
+      // Poll build completion in background and update queue task status
+      pollBuildCompletion(queueTask, taskId, null);
     } catch (Exception e) {
       log.error("Failed to start direct build", e);
       result.put("error", "启动构建失败: " + e.getMessage());
     }
     return result;
+  }
+
+  /**
+   * Start a background thread that polls for build completion and updates the queue task status.
+   * Used by startDirectBuild and startImmediateBuild which don't have inline polling (unlike
+   * executeQueuedTask which polls inline).
+   */
+  private void pollBuildCompletion(
+      BuildQueueTask queueTask, String taskId, String worktreePath) {
+    poolManager.submit(
+        () -> {
+          try {
+            BuildTask buildTask = buildService.getTask(taskId);
+            while (buildTask != null && buildTask.getEndTime() == null) {
+              Thread.sleep(2000);
+              buildTask = buildService.getTask(taskId);
+            }
+
+            if (buildTask != null) {
+              QueryWrapper<BuildRecord> rw = new QueryWrapper<>();
+              rw.eq("queue_task_id", queueTask.getId()).last("LIMIT 1");
+              BuildRecord record = buildRecordRepository.selectOne(rw);
+              if (record != null) {
+                queueTask.setBuildRecordId(record.getId());
+              }
+              queueTask.setLogFilePath(buildTask.getLogFilePath());
+              if (buildTask.getStatus().name().contains("SUCCESS")
+                  || buildTask.getStatus().name().contains("DEPLOY_SUCCESS")) {
+                queueTask.setStatus(BuildQueueTask.STATUS_SUCCESS);
+              } else {
+                queueTask.setStatus(BuildQueueTask.STATUS_FAILURE);
+                queueTask.setErrorMessage(buildTask.getErrorMessage());
+              }
+              queueTask.setCompletionTime(buildTask.getEndTime());
+            } else {
+              // Build task lost from memory (evicted) — check build record
+              QueryWrapper<BuildRecord> rw = new QueryWrapper<>();
+              rw.eq("queue_task_id", queueTask.getId()).last("LIMIT 1");
+              BuildRecord record = buildRecordRepository.selectOne(rw);
+              if (record != null) {
+                queueTask.setBuildRecordId(record.getId());
+                queueTask.setLogFilePath(record.getLogFilePath());
+                if ("SUCCESS".equals(record.getStatus())) {
+                  queueTask.setStatus(BuildQueueTask.STATUS_SUCCESS);
+                } else {
+                  queueTask.setStatus(BuildQueueTask.STATUS_FAILURE);
+                  queueTask.setErrorMessage("构建失败，详见构建日志");
+                }
+                queueTask.setCompletionTime(record.getBuildTime());
+              } else {
+                queueTask.setStatus(BuildQueueTask.STATUS_FAILURE);
+                queueTask.setErrorMessage("构建任务丢失（可能服务器重启）");
+                queueTask.setCompletionTime(LocalDateTime.now());
+              }
+            }
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          } catch (Exception e) {
+            log.error("Error polling build completion for queue task {}", queueTask.getId(), e);
+            queueTask.setStatus(BuildQueueTask.STATUS_FAILURE);
+            queueTask.setErrorMessage("状态更新异常: " + e.getMessage());
+            queueTask.setCompletionTime(LocalDateTime.now());
+          } finally {
+            queueTask.setUpdatedAt(LocalDateTime.now());
+            buildQueueRepository.updateById(queueTask);
+            if (worktreePath != null) {
+              try {
+                gitService.removeWorktree(worktreePath);
+              } catch (Exception e) {
+                log.warn("Failed to remove worktree {}: {}", worktreePath, e.getMessage());
+              }
+            }
+          }
+        });
   }
 
   private Map<String, Object> enqueueTask(

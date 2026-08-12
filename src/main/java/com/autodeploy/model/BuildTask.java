@@ -13,7 +13,7 @@ public class BuildTask {
   private String buildMode; // LOCAL or REMOTE
   private BuildTaskStatus status;
   private LocalDateTime startTime;
-  private LocalDateTime endTime;
+  private volatile LocalDateTime endTime;
   private String logFilePath;
   private String currentUser;
   private String errorMessage;
@@ -98,11 +98,17 @@ public class BuildTask {
 
   public void completeEmitters() {
     for (SseEmitter emitter : emitters) {
-      try {
-        emitter.complete();
-      } catch (Exception e) {
-        // ignore
-      }
+      Thread t =
+          new Thread(
+              () -> {
+                try {
+                  emitter.complete();
+                } catch (Exception e) {
+                  // ignore
+                }
+              });
+      t.setDaemon(true);
+      t.start();
     }
     emitters.clear();
   }

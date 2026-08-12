@@ -203,6 +203,33 @@ public class BuildService {
                 task.getBuildMode(),
                 workDir);
         if (cacheHit) {
+          // Verify build artifacts still exist on disk before skipping the build
+          java.util.List<String> modules =
+              task.getSelectedModules() != null && !task.getSelectedModules().isEmpty()
+                  ? task.getSelectedModules()
+                  : java.util.Collections.singletonList(".");
+          boolean artifactsExist = true;
+          for (String modulePath : modules) {
+            File moduleDir = ".".equals(modulePath) ? workDir : new File(workDir, modulePath);
+            if (!moduleDir.exists()) {
+              artifactsExist = false;
+              break;
+            }
+            java.util.List<File> artifacts =
+                com.autodeploy.util.ArtifactResolver.resolve(
+                    moduleDir, config, line -> {});
+            if (artifacts.isEmpty()) {
+              artifactsExist = false;
+              break;
+            }
+          }
+          if (!artifactsExist) {
+            cacheHit = false;
+            buildCacheService.evict(config.getId());
+            logLine(task, logWriter, "=== 构建缓存命中但产物已不存在，缓存失效，重新构建 ===");
+          }
+        }
+        if (cacheHit) {
           logLine(task, logWriter, "=== 命中构建缓存 ===");
           logLine(task, logWriter, "Git HEAD: " + currentGitHash.substring(0, 8) + " 未变更");
           logLine(
@@ -348,6 +375,11 @@ public class BuildService {
       task.pushLog("Failed to create log file: " + e.getMessage());
       saveBuildRecord(task, "FAIL", "FAIL");
     } finally {
+      // Mark task as complete FIRST, so queue polling and SSE clients see the finished state
+      // even if the branch restoration below hangs (e.g. JGit blocked on a lock file).
+      task.setEndTime(LocalDateTime.now());
+      task.completeEmitters();
+
       // Restore original branch if it was changed for this build
       if (originalBranch != null && repoDir != null && repoDir.isDirectory()) {
         try {
@@ -357,8 +389,6 @@ public class BuildService {
           log.warn("Failed to restore branch to {}: {}", originalBranch, e.getMessage());
         }
       }
-      task.setEndTime(LocalDateTime.now());
-      task.completeEmitters();
     }
   }
 
@@ -541,6 +571,7 @@ public class BuildService {
       task.pushLog("Failed to create log file: " + e.getMessage());
       saveBuildRecord(task, "FAIL", "FAIL");
     } finally {
+      log.info("Build task {} (worktree) finished, setting endTime", task.getTaskId());
       task.setEndTime(LocalDateTime.now());
       task.completeEmitters();
     }
@@ -896,12 +927,13 @@ public class BuildService {
     if (config == null) {
       return java.util.Collections.emptyList();
     }
-    String projectDir = config.getProjectDir();
-    if (projectDir == null || projectDir.trim().isEmpty()) {
-      return java.util.Collections.emptyList();
-    }
     try {
-      return gitService.listBranches(config, projectDir.trim());
+      String projectDir = config.getProjectDir();
+      if (projectDir != null && !projectDir.trim().isEmpty()) {
+        return gitService.listBranches(config, projectDir.trim());
+      }
+      // No local project dir — use ls-remote to list branches directly from the remote URL
+      return gitService.listBranches(config, null);
     } catch (Exception e) {
       log.warn(
           "Failed to list branches for project {}: {}", config.getProjectName(), e.getMessage());

@@ -163,9 +163,7 @@ public class DeployService {
     // Query scanned modules from database
     List<ProjectModule> modules =
         moduleRepository.selectList(
-            new QueryWrapper<ProjectModule>()
-                .eq("project_id", projectId)
-                .orderByDesc("id"));
+            new QueryWrapper<ProjectModule>().eq("project_id", projectId).orderByDesc("id"));
     if (modules.isEmpty()) {
       // No scanned modules, use single root module
       List<String> result = new ArrayList<>();
