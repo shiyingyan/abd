@@ -375,8 +375,7 @@ public class BuildQueueService {
    * Used by startDirectBuild and startImmediateBuild which don't have inline polling (unlike
    * executeQueuedTask which polls inline).
    */
-  private void pollBuildCompletion(
-      BuildQueueTask queueTask, String taskId, String worktreePath) {
+  private void pollBuildCompletion(BuildQueueTask queueTask, String taskId, String worktreePath) {
     poolManager.submit(
         () -> {
           try {

@@ -186,22 +186,29 @@ public class BuildService {
           workDir = repoDir;
         }
 
-        // Step 3.4: Build-cache check — if git HEAD and config match the last successful build
-        // and the working directory is still present, skip npm install + build and go straight
-        // to deploy. This avoids redundant compilations when code hasn't changed.
+        // Step 3.4: Build-cache check
+        // If the working tree has uncommitted changes, skip cache entirely — always rebuild.
+        // Only when the working tree is clean do we compare git HEAD against the cached entry.
+        boolean hasLocalChanges = gitService.hasUncommittedChanges(repoDir);
         String currentGitHash = gitService.getHeadHash(repoDir);
-        BuildCacheEntry cacheEntry = buildCacheService.get(config.getId());
-        boolean cacheHit =
-            buildCacheService.shouldSkipBuild(
-                cacheEntry,
-                currentGitHash,
-                task.getSelectedModules(),
-                config.getBuildWorkDir(),
-                config.getBuildCommand(),
-                config.getLanguageVersion(),
-                config.getDeploySourcePath(),
-                task.getBuildMode(),
-                workDir);
+        boolean cacheHit = false;
+        BuildCacheEntry cacheEntry = null;
+        if (hasLocalChanges) {
+          logLine(task, logWriter, "=== 本地代码有未提交的修改，跳过缓存判断，直接构建 ===");
+        } else {
+          cacheEntry = buildCacheService.get(config.getId());
+          cacheHit =
+              buildCacheService.shouldSkipBuild(
+                  cacheEntry,
+                  currentGitHash,
+                  task.getSelectedModules(),
+                  config.getBuildWorkDir(),
+                  config.getBuildCommand(),
+                  config.getLanguageVersion(),
+                  config.getDeploySourcePath(),
+                  task.getBuildMode(),
+                  workDir);
+        }
         if (cacheHit) {
           // Verify build artifacts still exist on disk before skipping the build
           java.util.List<String> modules =
@@ -216,8 +223,7 @@ public class BuildService {
               break;
             }
             java.util.List<File> artifacts =
-                com.autodeploy.util.ArtifactResolver.resolve(
-                    moduleDir, config, line -> {});
+                com.autodeploy.util.ArtifactResolver.resolve(moduleDir, config, line -> {});
             if (artifacts.isEmpty()) {
               artifactsExist = false;
               break;
@@ -243,7 +249,10 @@ public class BuildService {
           task.setStatus(BuildTaskStatus.SUCCESS);
         } else {
           // Cache miss — run npm install + build
-          String cacheReason = diagnoseCacheMiss(cacheEntry, currentGitHash, task, config, workDir);
+          String cacheReason =
+              hasLocalChanges
+                  ? "本地代码有未提交的修改"
+                  : diagnoseCacheMiss(cacheEntry, currentGitHash, task, config, workDir);
           logLine(task, logWriter, "=== 构建缓存未命中 (" + cacheReason + ")，执行完整构建 ===");
 
           // Step 3.5: For Node projects, check if npm install is needed
