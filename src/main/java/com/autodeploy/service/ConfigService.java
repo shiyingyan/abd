@@ -142,6 +142,67 @@ public class ConfigService {
   }
 
   /**
+   * Copy an existing project config to create a new one. All business fields are duplicated; id,
+   * projectKey, createdAt, updatedAt are regenerated. Env-server associations are also copied.
+   * Returns the new config id, or null if the source doesn't exist.
+   */
+  @Transactional
+  public Long copyConfig(Long sourceId) {
+    ProjectConfig source = configRepository.selectById(sourceId);
+    if (source == null) {
+      return null;
+    }
+
+    ProjectConfig copy = new ProjectConfig();
+    copy.setProjectName(source.getProjectName() + "-副本");
+    copy.setVersion(source.getVersion());
+    copy.setGitRepoUrl(source.getGitRepoUrl());
+    copy.setGitBranch(source.getGitBranch());
+    copy.setGitAuthEnvKey(source.getGitAuthEnvKey());
+    copy.setBuildCommand(source.getBuildCommand());
+    copy.setBuildWorkDir(source.getBuildWorkDir());
+    copy.setDeployServerHost(source.getDeployServerHost());
+    copy.setDeployServerPort(source.getDeployServerPort());
+    copy.setDeployServerUser(source.getDeployServerUser());
+    copy.setDeployAuthEnvKey(source.getDeployAuthEnvKey());
+    copy.setDeployTargetPath(source.getDeployTargetPath());
+    copy.setDeploySourcePath(source.getDeploySourcePath());
+    copy.setStartCommand(source.getStartCommand());
+    copy.setRestartCommand(source.getRestartCommand());
+    copy.setLanguageType(source.getLanguageType());
+    copy.setLanguageVersion(source.getLanguageVersion());
+    copy.setCustomInstallDir(source.getCustomInstallDir());
+    copy.setProjectDir(source.getProjectDir());
+    copy.setInstallDir(source.getInstallDir());
+    copy.setScriptDir(source.getScriptDir());
+
+    copy.setProjectKey(generateProjectKey(copy.getProjectName(), copy.getVersion()));
+    copy.setCreatedAt(LocalDateTime.now());
+    copy.setUpdatedAt(LocalDateTime.now());
+    configRepository.insert(copy);
+
+    List<ProjectEnvServer> associations =
+        projectEnvServerRepository.selectList(
+            new QueryWrapper<ProjectEnvServer>().eq("project_id", sourceId));
+    if (associations != null) {
+      LocalDateTime now = LocalDateTime.now();
+      for (ProjectEnvServer pes : associations) {
+        ProjectEnvServer newPes = new ProjectEnvServer();
+        newPes.setProjectId(copy.getId());
+        newPes.setEnvironmentId(pes.getEnvironmentId());
+        newPes.setServerId(pes.getServerId());
+        newPes.setDeployEnabled(pes.getDeployEnabled());
+        newPes.setCreatedAt(now);
+        projectEnvServerRepository.insert(newPes);
+      }
+    }
+
+    log.info(
+        "Copied project config id={} to id={} ({})", sourceId, copy.getId(), copy.getProjectName());
+    return copy.getId();
+  }
+
+  /**
    * Create a snapshot of the current config for build task isolation. The build task uses this
    * snapshot and is not affected by subsequent config changes.
    */

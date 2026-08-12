@@ -56,6 +56,8 @@
                             <td th:text="${config.updatedAt}"></td>
                             <td>
                                 <a th:href="@{/config/edit/{id}(id=${config.id})}" class="btn btn-sm btn-outline-primary">编辑</a>
+                                <a th:href="@{/config/copy/{id}(id=${config.id})}" class="btn btn-sm btn-outline-success"
+                                   onclick="return confirm('确认基于此项目创建副本?')">复制</a>
                                 <a th:href="@{/config/delete/{id}(id=${config.id})}" class="btn btn-sm btn-outline-danger"
                                    onclick="return confirm('确认删除?')">删除</a>
                             </td>

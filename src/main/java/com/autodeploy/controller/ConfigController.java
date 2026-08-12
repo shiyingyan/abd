@@ -111,6 +111,15 @@ public class ConfigController {
     return "redirect:/config";
   }
 
+  @GetMapping("/config/copy/{id}")
+  public String copy(@PathVariable Long id) {
+    Long newId = configService.copyConfig(id);
+    if (newId == null) {
+      return "redirect:/config";
+    }
+    return "redirect:/config/edit/" + newId;
+  }
+
   @GetMapping("/config/guide")
   public String guidePage() {
     return "config/guide";
