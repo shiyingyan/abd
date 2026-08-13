@@ -34,6 +34,7 @@ import org.springframework.stereotype.Component;
 public class JdbcSessionDAO implements SessionDAO {
 
   private static final Logger log = LoggerFactory.getLogger(JdbcSessionDAO.class);
+  private static final long LAST_ACCESS_UPDATE_INTERVAL_MS = 10 * 60 * 1000L;
 
   @Autowired private ShiroSessionRepository repository;
 
@@ -143,9 +144,17 @@ public class JdbcSessionDAO implements SessionDAO {
         repository.insert(row);
       } else {
         existing.setSessionData(encoded);
-        existing.setLastAccessTime(lastAccessLdt);
-        existing.setExpireAt(expireAt);
-        repository.updateById(existing);
+        if (existing.getLastAccessTime() == null
+            || lastAccess.getTime()
+                    - existing
+                        .getLastAccessTime()
+                        .atZone(ZoneId.systemDefault())
+                        .toInstant()
+                        .toEpochMilli()
+                >= LAST_ACCESS_UPDATE_INTERVAL_MS) {
+          existing.setLastAccessTime(lastAccessLdt);
+          repository.updateById(existing);
+        }
       }
     } catch (Exception e) {
       log.warn("Failed to persist session {}: {}", id, e.getMessage());

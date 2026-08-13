@@ -187,14 +187,54 @@ public class BuildService {
         }
 
         // Step 3.4: Build-cache check
-        // If the working tree has uncommitted changes, skip cache entirely — always rebuild.
-        // Only when the working tree is clean do we compare git HEAD against the cached entry.
+        // When the working tree has uncommitted changes, compare build artifact timestamps against
+        // source file timestamps to decide whether a rebuild is needed.
+        // When the working tree is clean, compare git HEAD against the cached entry.
         boolean hasLocalChanges = gitService.hasUncommittedChanges(repoDir);
         String currentGitHash = gitService.getHeadHash(repoDir);
         boolean cacheHit = false;
         BuildCacheEntry cacheEntry = null;
         if (hasLocalChanges) {
-          logLine(task, logWriter, "=== 本地代码有未提交的修改，跳过缓存判断，直接构建 ===");
+          logLine(task, logWriter, "=== 本地代码有未提交的修改，检查构建产物是否需要更新 ===");
+          java.util.List<String> modules =
+              task.getSelectedModules() != null && !task.getSelectedModules().isEmpty()
+                  ? task.getSelectedModules()
+                  : java.util.Collections.singletonList(".");
+          boolean artifactsExist = true;
+          boolean artifactsUpToDate = true;
+          long latestSourceTime = findLatestSourceFileTime(workDir);
+          for (String modulePath : modules) {
+            File moduleDir = ".".equals(modulePath) ? workDir : new File(workDir, modulePath);
+            if (!moduleDir.exists()) {
+              artifactsExist = false;
+              break;
+            }
+            java.util.List<File> artifacts =
+                com.autodeploy.util.ArtifactResolver.resolve(moduleDir, config, line -> {});
+            if (artifacts.isEmpty()) {
+              artifactsExist = false;
+              break;
+            }
+            for (File artifact : artifacts) {
+              long artifactTime = getEffectiveLastModified(artifact);
+              if (artifactTime <= latestSourceTime) {
+                artifactsUpToDate = false;
+                break;
+              }
+            }
+            if (!artifactsUpToDate) break;
+          }
+          if (!artifactsExist) {
+            logLine(task, logWriter, "构建产物不存在，需要构建");
+          } else if (!artifactsUpToDate) {
+            logLine(task, logWriter, "构建产物早于或等于源文件修改时间，需要重新构建");
+          } else {
+            logLine(task, logWriter, "构建产物晚于源文件修改时间，代码无修改，跳过构建，直接部署");
+            task.setStatus(BuildTaskStatus.SUCCESS);
+          }
+          if (artifactsExist && artifactsUpToDate) {
+            cacheHit = true;
+          }
         } else {
           cacheEntry = buildCacheService.get(config.getId());
           cacheHit =
@@ -236,15 +276,19 @@ public class BuildService {
           }
         }
         if (cacheHit) {
-          logLine(task, logWriter, "=== 命中构建缓存 ===");
-          logLine(task, logWriter, "Git HEAD: " + currentGitHash.substring(0, 8) + " 未变更");
-          logLine(
-              task,
-              logWriter,
-              "上次构建时间: "
-                  + LocalDateTime.ofInstant(
-                      java.time.Instant.ofEpochMilli(cacheEntry.getUpdatedAt()),
-                      java.time.ZoneId.systemDefault()));
+          if (hasLocalChanges) {
+            logLine(task, logWriter, "=== 构建产物无需更新，跳过构建 ===");
+          } else {
+            logLine(task, logWriter, "=== 命中构建缓存 ===");
+            logLine(task, logWriter, "Git HEAD: " + currentGitHash.substring(0, 8) + " 未变更");
+            logLine(
+                task,
+                logWriter,
+                "上次构建时间: "
+                    + LocalDateTime.ofInstant(
+                        java.time.Instant.ofEpochMilli(cacheEntry.getUpdatedAt()),
+                        java.time.ZoneId.systemDefault()));
+          }
           logLine(task, logWriter, "跳过 npm install / 编译步骤，直接进入部署阶段");
           task.setStatus(BuildTaskStatus.SUCCESS);
         } else {
@@ -697,6 +741,58 @@ public class BuildService {
     String x = a == null ? "" : a.trim();
     String y = b == null ? "" : b.trim();
     return !x.equals(y);
+  }
+
+  /**
+   * Scan the working directory recursively for the latest source file modification time. Excludes
+   * build output directories and dependency/tool directories that are not source code.
+   */
+  private long findLatestSourceFileTime(File dir) {
+    long maxTime = 0;
+    File[] files = dir.listFiles();
+    if (files == null) return 0;
+    for (File file : files) {
+      if (file.getName().startsWith(".")
+          || "node_modules".equals(file.getName())
+          || isBuildOutputDir(file)) {
+        continue;
+      }
+      if (file.isDirectory()) {
+        maxTime = Math.max(maxTime, findLatestSourceFileTime(file));
+      } else if (file.isFile()) {
+        maxTime = Math.max(maxTime, file.lastModified());
+      }
+    }
+    return maxTime;
+  }
+
+  /**
+   * Get the effective last modification time of a file or directory. For directories, recursively
+   * scans all contained files to find the most recent modification time.
+   */
+  private long getEffectiveLastModified(File file) {
+    if (!file.exists()) return 0;
+    if (file.isFile()) return file.lastModified();
+    long maxTime = file.lastModified();
+    File[] children = file.listFiles();
+    if (children != null) {
+      for (File child : children) {
+        maxTime = Math.max(maxTime, getEffectiveLastModified(child));
+      }
+    }
+    return maxTime;
+  }
+
+  /** Check if a directory is a known build output directory that should be excluded from scans. */
+  private static boolean isBuildOutputDir(File dir) {
+    if (!dir.isDirectory()) return false;
+    String name = dir.getName();
+    return "target".equals(name)
+        || "dist".equals(name)
+        || "build".equals(name)
+        || ".next".equals(name)
+        || ".output".equals(name)
+        || "out".equals(name);
   }
 
   /** Save a build record to the database. */
