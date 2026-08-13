@@ -8,10 +8,10 @@
         <div th:replace="fragments/common :: sidebar"></div>
         <div class="col-md-10">
             <h4>
-                构建日志 -
-                <span th:if="${!isActive}" th:text="${task.configSnapshot.projectName}"></span>
-                <span th:if="${!isActive}" class="badge bg-info" th:text="${task.status.label}"></span>
-                <span th:if="${!isActive and taskId!=null and taskId.length()>0}" th:text="${taskId}"></span>
+                构建日志
+                <span th:if="${isActive and task != null}" th:text="${task.configSnapshot.projectName}"></span>
+                <span th:if="${isActive and task != null}" class="badge bg-info" th:text="${task.status.label}"></span>
+                <span th:if="${taskId != null}" class="text-muted" th:text="${taskId}"></span>
             </h4>
             <a th:href="@{/build}" class="btn btn-secondary btn-sm mb-2">返回</a>
             <button id="loadMoreBtn" class="btn btn-outline-info btn-sm mb-2" style="display:none;" onclick="prependOlderLines()">加载更多</button>
@@ -20,7 +20,7 @@
     </div>
 </div>
 <th:block th:replace="fragments/common :: scripts"></th:block>
-<script th:if="${isActive and taskId!=null and taskId.length()>0 }">
+<script th:if="${isActive}">
     // Active task: replay buffered logs via SSE, then stream live
     var taskId = '[[${task.taskId}]]';
     var logArea = document.getElementById('logArea');
@@ -107,7 +107,7 @@
             });
     }
 </script>
-<script th:if="${!isActive and taskId!=null and taskId.length()>0}">
+<script th:if="${!isActive}">
     // Completed/evicted task: load last N lines from file, with "load more"
     var logArea = document.getElementById('logArea');
     logArea.textContent = '正在加载日志...';

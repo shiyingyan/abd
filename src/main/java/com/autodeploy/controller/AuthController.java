@@ -2,6 +2,8 @@ package com.autodeploy.controller;
 
 import com.autodeploy.model.User;
 import com.autodeploy.service.UserService;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.AuthenticationException;
 import org.apache.shiro.authc.UsernamePasswordToken;
@@ -14,6 +16,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
 
 @Controller
 public class AuthController {
@@ -89,5 +92,27 @@ public class AuthController {
   @GetMapping("/")
   public String index() {
     return "redirect:/build";
+  }
+
+  @GetMapping("/api/auth/debug-session")
+  @ResponseBody
+  public Map<String, Object> debugSession() {
+    Map<String, Object> result = new LinkedHashMap<>();
+    try {
+      Subject subject = SecurityUtils.getSubject();
+      result.put("authenticated", subject.isAuthenticated());
+      result.put("principal", subject.getPrincipal());
+      org.apache.shiro.session.Session session = subject.getSession(false);
+      result.put("sessionId", session != null ? session.getId() : null);
+      if (session != null) {
+        Object principals = session.getAttribute(
+            "org.apache.shiro.subject.support.DefaultSubjectContext_PRINCIPALS_SESSION_KEY");
+        result.put("sessionPrincipals",
+            principals != null ? principals.toString() : null);
+      }
+    } catch (Exception e) {
+      result.put("error", e.getMessage());
+    }
+    return result;
   }
 }

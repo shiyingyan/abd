@@ -4,7 +4,9 @@
       "Bash(cd D:/code/tools/auto-deploy && mvn clean compile -q 2>&1 | tail -30)",
       "Bash(ls -lt ~/.autodeploy/logs/ 2>/dev/null | head -20)",
       "Bash(grep -n \"3b997d6e\\\\|build-task-1786500997098\" ~/.autodeploy/logs/system/auto-deploy.log 2>/dev/null)",
-      "Read(//c/Users/Administrator.DESKTOP-52A45T0/.autodeploy/logs/system/**)"
+      "Read(//c/Users/Administrator.DESKTOP-52A45T0/.autodeploy/logs/system/**)",
+      "mcp__dm-mcp-server-dev__dev_list_tables",
+      "mcp__dm-mcp-server-dev__*"
     ]
   }
 }

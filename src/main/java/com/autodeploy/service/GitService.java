@@ -49,17 +49,6 @@ public class GitService {
         // This ensures JGit detects changes the same way as command-line git.
         configureGitFromSystemSettings(git.getRepository());
 
-        // Guard 1: refuse to pull if working tree has uncommitted changes to tracked files.
-        // Untracked files (build artifacts) are intentionally excluded — they don't conflict
-        // with git pull and would cause false positives in build environments.
-        Status status = git.status().call();
-        if (status.hasUncommittedChanges()) {
-          String msg =
-              "本地仓库有未提交的修改（" + status.getUncommittedChanges().size() + " 个已修改），请先提交或暂存后再触发构建";
-          log.warn("Git pull refused: {}", msg);
-          throw new IllegalStateException(msg);
-        }
-
         try {
           PullCommand pull = git.pull();
           if (creds != null) {
@@ -100,6 +89,20 @@ public class GitService {
                     + "请手动合并目标分支 "
                     + branch
                     + " 并解决冲突后再构建。原始错误: "
+                    + msg,
+                e);
+          }
+
+          boolean localChangesBlockPull =
+              msg.contains("would be overwritten") || msg.contains("local changes");
+          if (localChangesBlockPull) {
+            log.warn(
+                "Git pull failed due to uncommitted local changes for {}: {}",
+                config.getProjectName(),
+                msg);
+            throw new IllegalStateException(
+                "Git pull 失败：本地未提交的修改与远程更新存在冲突，无法自动合并。"
+                    + "请先提交或暂存本地修改，或勾选「跳过代码更新，直接构建」。原始错误: "
                     + msg,
                 e);
           }

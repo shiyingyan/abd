@@ -1,0 +1,12 @@
+[
+  {
+    "name": "JSESSIONID",
+    "value": "da950300-cbc5-4288-9acb-aa970e39bda2",
+    "domain": "localhost",
+    "path": "/",
+    "expires": 1786727615.021134,
+    "httpOnly": true,
+    "secure": false,
+    "sameSite": "Lax"
+  }
+]

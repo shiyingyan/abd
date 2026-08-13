@@ -76,6 +76,7 @@ public class BuildController {
     if (task != null) {
       model.addAttribute("task", task);
       model.addAttribute("isActive", true);
+      model.addAttribute("taskId", taskId);
     } else {
       // Task no longer in memory, try to find log from build records
       model.addAttribute("isActive", false);

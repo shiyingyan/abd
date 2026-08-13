@@ -128,7 +128,15 @@ public class BuildService {
                   task, logWriter, "=== 分支切换: " + currentBranch + " -> " + selectedBranch + " ===");
               // Check for uncommitted changes before switching
               if (gitService.hasUncommittedChanges(repoDir)) {
-                String errorMsg = "本地仓库有未提交的修改，无法切换到分支 " + selectedBranch + "。请先提交或暂存代码。";
+                String errorMsg =
+                    "当前分支（"
+                        + currentBranch
+                        + "）与目标分支（"
+                        + selectedBranch
+                        + "）不一致，且本地有未提交的修改，无法切换分支。"
+                        + "请先提交代码，或将目标分支选择为当前分支（"
+                        + currentBranch
+                        + "）。";
                 logLine(task, logWriter, "=== 构建终止: " + errorMsg + " ===");
                 task.setStatus(BuildTaskStatus.FAILED);
                 task.setErrorMessage(errorMsg);

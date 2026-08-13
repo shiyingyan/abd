@@ -86,6 +86,32 @@ public class BuildQueueService {
       return result;
     }
 
+    // Check branch mismatch with uncommitted changes
+    String projectDir = snapshot.getProjectDir();
+    if (projectDir != null && !projectDir.trim().isEmpty()) {
+      java.io.File repoDir = new java.io.File(projectDir.trim());
+      if (repoDir.exists() && new java.io.File(repoDir, ".git").exists()) {
+        String currentBranch = gitService.getCurrentBranch(repoDir);
+        if (currentBranch != null
+            && selectedBranch != null
+            && !currentBranch.equals(selectedBranch)
+            && gitService.hasUncommittedChanges(repoDir)) {
+          Map<String, Object> result = new HashMap<>();
+          result.put(
+              "error",
+              "当前分支（"
+                  + currentBranch
+                  + "）与目标分支（"
+                  + selectedBranch
+                  + "）不一致，且本地有未提交的修改，无法切换分支。"
+                  + "请先提交代码，或将目标分支选择为当前分支（"
+                  + currentBranch
+                  + "）。");
+          return result;
+        }
+      }
+    }
+
     // Resolve deploy server/env IDs for duplicate comparison
     String deployServersKey = resolveDeployServersKey(configId, envIds);
     String deployEnvsKey = resolveDeployEnvsKey(envIds);

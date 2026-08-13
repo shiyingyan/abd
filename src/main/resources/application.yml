@@ -44,9 +44,9 @@ spring:
       max-request-size: 500MB
   devtools:
     restart:
-      enabled: true
+      enabled: false
     livereload:
-      enabled: true       # 浏览器装 LiveReload 插件可自动刷
+      enabled: false
 
 
 mybatis-plus:
@@ -74,4 +74,4 @@ logging:
   config: classpath:logback-spring.xml
   level:
     com.autodeploy: DEBUG
-    org.apache.shiro: INFO
+    org.apache.shiro: DEBUG

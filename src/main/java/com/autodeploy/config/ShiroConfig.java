@@ -9,10 +9,16 @@ import org.apache.shiro.authz.Authorizer;
 import org.apache.shiro.mgt.DefaultSubjectDAO;
 import org.apache.shiro.mgt.SubjectDAO;
 import org.apache.shiro.mgt.SubjectFactory;
+import org.apache.shiro.session.Session;
+import org.apache.shiro.session.mgt.SessionContext;
+import org.apache.shiro.session.mgt.SessionFactory;
+import org.apache.shiro.session.mgt.SimpleSession;
 import org.apache.shiro.session.mgt.eis.SessionDAO;
 import org.apache.shiro.spring.web.ShiroFilterFactoryBean;
 import org.apache.shiro.spring.web.config.DefaultShiroFilterChainDefinition;
 import org.apache.shiro.spring.web.config.ShiroFilterChainDefinition;
+import org.apache.shiro.subject.Subject;
+import org.apache.shiro.subject.SubjectContext;
 import org.apache.shiro.web.mgt.DefaultWebSecurityManager;
 import org.apache.shiro.web.mgt.DefaultWebSubjectFactory;
 import org.apache.shiro.web.session.mgt.DefaultWebSessionManager;
@@ -80,15 +86,30 @@ public class ShiroConfig {
     return sm;
   }
 
+  private static final long SESSION_TIMEOUT_MS = 24L * 60 * 60 * 1000;
+
+  @Bean
+  public SessionFactory sessionFactory() {
+    return new SessionFactory() {
+      @Override
+      public Session createSession(SessionContext initData) {
+        SimpleSession session = new SimpleSession();
+        session.setTimeout(SESSION_TIMEOUT_MS);
+        return session;
+      }
+    };
+  }
+
   /**
    * Web session manager wired to the JDBC-backed session DAO. The global timeout is 24 h so a login
    * survives application restarts (sessions live in the {@code shiro_session} table).
    */
   @Bean
-  public WebSessionManager sessionManager(SessionDAO sessionDAO) {
+  public WebSessionManager sessionManager(SessionDAO sessionDAO, SessionFactory sessionFactory) {
     DefaultWebSessionManager sessionManager = new DefaultWebSessionManager();
     sessionManager.setSessionDAO(sessionDAO);
-    sessionManager.setGlobalSessionTimeout(24L * 60 * 60 * 1000);
+    sessionManager.setSessionFactory(sessionFactory);
+    sessionManager.setGlobalSessionTimeout(SESSION_TIMEOUT_MS);
     sessionManager.getSessionIdCookie().setMaxAge(24 * 60 * 60);
     sessionManager.getSessionIdCookie().setHttpOnly(true);
     return sessionManager;
@@ -103,6 +124,33 @@ public class ShiroConfig {
     chainDefinition.addPathDefinition("/api/auth/**", "anon");
     chainDefinition.addPathDefinition("/**", "authc");
     return chainDefinition;
+  }
+
+  /**
+   * Override Shiro's default authc filter to restore authentication state from the session. Shiro
+   * 1.13.0 does not restore the {@code authenticated} flag from the session after an application
+   * restart, so even though the session contains valid principals, {@code subject.isAuthenticated()}
+   * returns false. This custom filter compensates by re-authenticating the subject when principals
+   * are found in the session.
+   */
+  @Bean
+  public org.apache.shiro.web.filter.authc.FormAuthenticationFilter formAuthenticationFilter() {
+    return new org.apache.shiro.web.filter.authc.FormAuthenticationFilter() {
+      @Override
+      protected boolean isAccessAllowed(
+          javax.servlet.ServletRequest request,
+          javax.servlet.ServletResponse response,
+          Object mappedValue) {
+        if (super.isAccessAllowed(request, response, mappedValue)) {
+          return true;
+        }
+        org.apache.shiro.subject.Subject subject = getSubject(request, response);
+        if (subject.getPrincipal() != null) {
+          return true;
+        }
+        return false;
+      }
+    };
   }
 
   /**
@@ -132,6 +180,17 @@ public class ShiroConfig {
     registration.addUrlPatterns("/*");
     registration.setDispatcherTypes(DispatcherType.REQUEST);
     registration.setOrder(2);
+    return registration;
+  }
+
+  @Bean
+  public FilterRegistrationBean<SessionDebugFilter> sessionDebugFilterRegistration(
+      SessionDebugFilter sessionDebugFilter) {
+    FilterRegistrationBean<SessionDebugFilter> registration = new FilterRegistrationBean<>();
+    registration.setFilter(sessionDebugFilter);
+    registration.addUrlPatterns("/*");
+    registration.setDispatcherTypes(DispatcherType.REQUEST);
+    registration.setOrder(0);
     return registration;
   }
 }

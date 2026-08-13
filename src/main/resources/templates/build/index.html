@@ -89,8 +89,18 @@
                                     </label>
                                 </div>
                                 <div class="form-text mt-1">
-                                    检测到本地仓库有未提交的修改。勾选后将跳过 git pull，直接基于当前本地代码进行构建。
+                                    检测到本地仓库有未提交的修改。<br>
+                                    <strong>不勾选（默认）</strong>：先执行 git pull 拉取远程更新，若与本地修改冲突则报错终止；无冲突则直接构建。<br>
+                                    <strong>勾选</strong>：跳过 git pull，直接基于当前本地代码进行构建。
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Branch mismatch error (shown when target branch differs from current and there are uncommitted changes) -->
+                        <div class="mt-3" id="branchMismatchSection" style="display:none;">
+                            <div class="alert alert-danger py-2 px-3 mb-2">
+                                <strong>无法构建：分支不一致且存在未提交修改</strong>
+                                <div class="form-text mt-1" id="branchMismatchMsg"></div>
                             </div>
                         </div>
 
@@ -211,6 +221,8 @@
 
     var selectedConfigId = null;
     var selectedLangType = null;
+    var repoCurrentBranch = null;
+    var hasUncommittedChanges = false;
 
     // Load modules when project is selected
     $('#configSelect').change(function() {
@@ -346,14 +358,14 @@
 
             var currentBranch = data.currentBranch;
             // Determine which branch to select by default:
-            // 1. The defaultBranch from project config (if it exists in the list)
-            // 2. The current local branch
+            // 1. The current local branch (repository's active branch)
+            // 2. The defaultBranch from project config (if it exists in the list)
             // 3. The first branch in the list
             var selectedBranch = null;
-            if (defaultBranch && data.branches.indexOf(defaultBranch) >= 0) {
-                selectedBranch = defaultBranch;
-            } else if (currentBranch && data.branches.indexOf(currentBranch) >= 0) {
+            if (currentBranch && data.branches.indexOf(currentBranch) >= 0) {
                 selectedBranch = currentBranch;
+            } else if (defaultBranch && data.branches.indexOf(defaultBranch) >= 0) {
+                selectedBranch = defaultBranch;
             } else {
                 selectedBranch = data.branches[0];
             }
@@ -386,18 +398,40 @@
     function checkGitStatus() {
         if (!selectedConfigId) {
             $('#skipGitPullSection').hide();
+            $('#branchMismatchSection').hide();
+            repoCurrentBranch = null;
+            hasUncommittedChanges = false;
             return;
         }
         $.get('/api/build/git-status/' + selectedConfigId, function(data) {
-            if (data.hasUncommittedChanges) {
+            repoCurrentBranch = data.currentBranch || null;
+            hasUncommittedChanges = !!data.hasUncommittedChanges;
+            if (hasUncommittedChanges) {
                 $('#skipGitPullSection').show();
             } else {
                 $('#skipGitPullSection').hide();
                 $('#skipGitPullToggle').prop('checked', false);
             }
+            checkBranchMismatch();
         }).fail(function() {
             $('#skipGitPullSection').hide();
+            $('#branchMismatchSection').hide();
+            repoCurrentBranch = null;
+            hasUncommittedChanges = false;
         });
+    }
+
+    function checkBranchMismatch() {
+        var selectedBranch = $('#branchSelect').val();
+        if (hasUncommittedChanges && repoCurrentBranch && selectedBranch && selectedBranch !== repoCurrentBranch) {
+            $('#branchMismatchMsg').html(
+                '当前分支（<strong>' + repoCurrentBranch + '</strong>）与目标分支（<strong>' + selectedBranch + '</strong>）不一致，且本地有未提交的修改。<br>' +
+                '请先提交代码，或将目标分支选择为当前分支（<strong>' + repoCurrentBranch + '</strong>）。'
+            );
+            $('#branchMismatchSection').show();
+        } else {
+            $('#branchMismatchSection').hide();
+        }
     }
 
     // Rescan modules
@@ -432,6 +466,12 @@
         if (!branchVal) {
             e.preventDefault();
             alert('请选择代码分支');
+            return false;
+        }
+
+        // Block if branch mismatch with uncommitted changes
+        if ($('#branchMismatchSection').is(':visible')) {
+            e.preventDefault();
             return false;
         }
 
@@ -505,6 +545,7 @@
         $('#duplicateErrorSection').hide();
         $('#forceStartSection').hide();
         $('#forceStartToggle').prop('checked', false);
+        checkBranchMismatch();
     });
 
     // Download artifact (placeholder - actual download would need artifact resolution)

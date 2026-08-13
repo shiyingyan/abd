@@ -31,23 +31,49 @@ public class SessionExpiryFilter implements Filter {
     }
 
     Subject subject = SecurityUtils.getSubject();
-    if (!subject.isAuthenticated()) {
-      httpResp.sendRedirect(httpReq.getContextPath() + "/login");
-      return;
-    }
+    log.debug(
+        "SessionExpiryFilter: uri={}, pre-authenticated={}", uri, subject.isAuthenticated());
 
+    // Load session first (triggers DB lookup on cache miss, e.g. after restart)
+    // before checking authentication state, so that principals can be restored.
     try {
-      subject.getSession().getAttribute("id");
-      chain.doFilter(request, response);
+      org.apache.shiro.session.Session session = subject.getSession(false);
+      if (session == null) {
+        String cookieId = null;
+        if (httpReq.getCookies() != null) {
+          for (javax.servlet.http.Cookie c : httpReq.getCookies()) {
+            if ("JSESSIONID".equals(c.getName())) {
+              cookieId = c.getValue();
+              break;
+            }
+          }
+        }
+        log.info("SessionExpiryFilter: session is null, cookie JSESSIONID={}", cookieId);
+        httpResp.sendRedirect(httpReq.getContextPath() + "/login");
+        return;
+      }
+      log.debug(
+          "SessionExpiryFilter: session found id={}, authenticated={}",
+          session.getId(),
+          subject.isAuthenticated());
+      session.getAttribute("id");
     } catch (Exception e) {
-      log.debug("Session expired, redirecting to login");
+      log.info("SessionExpiryFilter: exception during session lookup: {}", e.getMessage());
       try {
         subject.logout();
       } catch (Exception ignored) {
         // ignore logout errors on expired session
       }
       httpResp.sendRedirect(httpReq.getContextPath() + "/login");
+      return;
     }
+
+    if (!subject.isAuthenticated()) {
+      httpResp.sendRedirect(httpReq.getContextPath() + "/login");
+      return;
+    }
+
+    chain.doFilter(request, response);
   }
 
   private boolean isAnonymousPath(String uri) {
