@@ -797,6 +797,17 @@ public class BuildQueueService {
     return buildQueueRepository.selectById(id);
   }
 
+  /** Calculate which page a task falls on with default sort (id DESC). */
+  public int getPageForTask(Long taskId, int pageSize) {
+    BuildQueueTask target = buildQueueRepository.selectById(taskId);
+    if (target == null) return 1;
+
+    QueryWrapper<BuildQueueTask> wrapper = new QueryWrapper<>();
+    wrapper.gt("id", target.getId());
+    Long count = buildQueueRepository.selectCount(wrapper);
+    return (int) (count / pageSize) + 1;
+  }
+
   /** Also clean up worktree for immediate builds after they complete. */
   @Scheduled(fixedDelay = 3600000)
   public void cleanupCompletedWorktrees() {

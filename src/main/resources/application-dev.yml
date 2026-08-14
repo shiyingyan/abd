@@ -6,6 +6,11 @@ server:
       force: true
 
 spring:
+  devtools:
+    restart:
+      enabled: true
+    livereload:
+      enabled: true
   aop:
     proxy-target-class: true
   datasource:

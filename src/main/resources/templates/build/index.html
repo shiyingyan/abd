@@ -574,6 +574,8 @@
     // ---- Task queue table ----
     var taskSearch = {searchUser: '', searchProject: '', searchBranch: '', searchStatus: '', searchBuildMode: ''};
     var taskSort = {field: '', order: ''};
+    var highlightTaskId = new URLSearchParams(window.location.search).get('highlightTask');
+    var taskTablePage = 1;
 
     function formatDateTime(val) {
         if (!val) return '';
@@ -598,7 +600,7 @@
 
     function refreshTaskTable() {
         var params = {
-            page: 1, size: 50,
+            page: taskTablePage, size: 50,
             searchUser: taskSearch.searchUser,
             searchProject: taskSearch.searchProject,
             searchBranch: taskSearch.searchBranch,
@@ -622,7 +624,7 @@
         }
         var html = '';
         records.forEach(function(t) {
-            html += '<tr>';
+            html += '<tr data-task-id="' + t.id + '">';
             html += '<td>' + t.id + '</td>';
             html += '<td>' + (t.username || '') + '</td>';
             html += '<td>' + (t.projectName || '') + '</td>';
@@ -649,7 +651,7 @@
                 html += '<span class="badge bg-secondary me-1">启动中...</span>';
             }
             if (t.buildRecordId) {
-                html += '<a href="/history?id=' + t.buildRecordId + '" class="btn btn-sm btn-outline-info me-1">历史</a>';
+                html += '<a href="/history?recordId=' + t.buildRecordId + '" class="btn btn-sm btn-outline-info me-1">历史</a>';
             }
             if (t.status === 1 && t.errorMessage) {
                 html += '<span class="text-danger" style="font-size:0.75rem;max-width:200px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;" title="' + escapeHtml(t.errorMessage) + '">' + escapeHtml(t.errorMessage.length > 30 ? t.errorMessage.substring(0, 30) + '...' : t.errorMessage) + '</span>';
@@ -658,6 +660,18 @@
             html += '</tr>';
         });
         tbody.html(html);
+        if (highlightTaskId) {
+            var row = document.querySelector('tr[data-task-id="' + highlightTaskId + '"]');
+            if (row) {
+                row.classList.add('table-warning');
+                row.scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
+            var url = new URL(window.location);
+            url.searchParams.delete('highlightTask');
+            window.history.replaceState({}, '', url);
+            highlightTaskId = null;
+            taskTablePage = 1;
+        }
     }
 
     function escapeHtml(str) {
@@ -743,7 +757,16 @@
     });
 
     // Initial load and auto-refresh
-    refreshTaskTable();
+    if (highlightTaskId) {
+        $.get('/api/queue/task/' + highlightTaskId + '/page?size=50', function(data) {
+            taskTablePage = data.page || 1;
+            refreshTaskTable();
+        }).fail(function() {
+            refreshTaskTable();
+        });
+    } else {
+        refreshTaskTable();
+    }
     setInterval(refreshTaskTable, 5000);
 </script>
 </body>

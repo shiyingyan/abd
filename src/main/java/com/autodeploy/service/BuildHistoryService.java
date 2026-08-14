@@ -31,7 +31,7 @@ public class BuildHistoryService {
       LocalDateTime dateTo) {
     QueryWrapper<BuildRecord> wrapper = new QueryWrapper<>();
     if (projectName != null && !projectName.isEmpty()) {
-      wrapper.eq("project_name", projectName);
+      wrapper.like("project_name", projectName);
     }
     if (status != null && !status.isEmpty()) {
       wrapper.eq("status", status);
@@ -44,6 +44,35 @@ public class BuildHistoryService {
     }
     wrapper.orderByDesc("build_time");
     return buildRecordRepository.selectPage(new Page<>(pageNum, pageSize), wrapper);
+  }
+
+  public int getPageForRecord(
+      Long recordId,
+      String projectName,
+      String status,
+      LocalDateTime dateFrom,
+      LocalDateTime dateTo,
+      int pageSize) {
+    BuildRecord target = buildRecordRepository.selectById(recordId);
+    if (target == null || target.getBuildTime() == null) return 1;
+
+    QueryWrapper<BuildRecord> wrapper = new QueryWrapper<>();
+    if (projectName != null && !projectName.isEmpty()) {
+      wrapper.like("project_name", projectName);
+    }
+    if (status != null && !status.isEmpty()) {
+      wrapper.eq("status", status);
+    }
+    if (dateFrom != null) {
+      wrapper.ge("build_time", dateFrom);
+    }
+    if (dateTo != null) {
+      wrapper.le("build_time", dateTo);
+    }
+    wrapper.gt("build_time", target.getBuildTime());
+
+    Long count = buildRecordRepository.selectCount(wrapper);
+    return (int) (count / pageSize) + 1;
   }
 
   public BuildRecord getById(Long id) {

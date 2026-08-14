@@ -233,6 +233,16 @@ public class BuildController {
     return ResponseEntity.ok(task);
   }
 
+  @GetMapping("/api/queue/task/{id}/page")
+  @ResponseBody
+  public ResponseEntity<Map<String, Object>> getTaskPage(
+      @PathVariable Long id, @RequestParam(defaultValue = "50") int size) {
+    Map<String, Object> result = new HashMap<>();
+    int page = buildQueueService.getPageForTask(id, size);
+    result.put("page", page);
+    return ResponseEntity.ok(result);
+  }
+
   @PostMapping("/api/queue/cancel/{id}")
   @ResponseBody
   public ResponseEntity<Map<String, Object>> cancelQueueTask(@PathVariable Long id) {

@@ -44,7 +44,7 @@
                     <table class="table table-sm">
                         <thead><tr><th>ID</th><th>项目</th><th>版本</th><th>仓库</th><th>构建时间</th><th>用户</th><th>状态</th><th>模式</th><th>部署</th><th>队列任务</th><th>操作</th></tr></thead>
                         <tbody>
-                            <tr th:each="r : ${records}">
+                            <tr th:each="r : ${records}" th:attr="data-record-id=${r.id}">
                                 <td th:text="${r.id}"></td>
                                 <td th:text="${r.projectName}"></td>
                                 <td th:text="${r.version}"></td>
@@ -59,7 +59,7 @@
                                     <span class="badge" th:classappend="${r.deployStatus == 'SUCCESS' ? 'bg-success' : (r.deployStatus == 'FAIL' ? 'bg-danger' : 'bg-warning')}" th:text="${r.deployStatus}"></span>
                                 </td>
                                 <td>
-                                    <a th:if="${r.queueTaskId != null}" th:href="@{/build}" th:text="'#' + ${r.queueTaskId}" class="text-decoration-none"></a>
+                                    <a th:if="${r.queueTaskId != null}" th:href="@{/build(highlightTask=${r.queueTaskId})}" th:text="'#' + ${r.queueTaskId}" class="text-decoration-none"></a>
                                     <span th:if="${r.queueTaskId == null}" class="text-muted">-</span>
                                 </td>
                                 <td>
@@ -74,11 +74,11 @@
                     <nav th:if="${totalPages > 1}">
                         <ul class="pagination">
                             <li class="page-item" th:classappend="${currentPage == 1 ? 'disabled' : ''}">
-                                <a class="page-link" th:href="@{/history(page=${currentPage - 1}, projectName=${projectName}, status=${status})}">上一页</a>
+                                <a class="page-link" th:href="@{/history(page=${currentPage - 1}, projectName=${projectName}, status=${status}, dateFrom=${dateFrom}, dateTo=${dateTo})}">上一页</a>
                             </li>
                             <li class="page-item active"><span class="page-link" th:text="${currentPage + ' / ' + totalPages}"></span></li>
                             <li class="page-item" th:classappend="${currentPage == totalPages ? 'disabled' : ''}">
-                                <a class="page-link" th:href="@{/history(page=${currentPage + 1}, projectName=${projectName}, status=${status})}">下一页</a>
+                                <a class="page-link" th:href="@{/history(page=${currentPage + 1}, projectName=${projectName}, status=${status}, dateFrom=${dateFrom}, dateTo=${dateTo})}">下一页</a>
                             </li>
                         </ul>
                     </nav>
@@ -173,6 +173,18 @@ function historyPrependOlderLines() {
         }
     });
 }
+
+(function() {
+    var params = new URLSearchParams(window.location.search);
+    var recordId = params.get('recordId');
+    if (recordId) {
+        var row = document.querySelector('tr[data-record-id="' + recordId + '"]');
+        if (row) {
+            row.classList.add('table-warning');
+            row.scrollIntoView({behavior: 'smooth', block: 'center'});
+        }
+    }
+})();
 </script>
 </body>
 </html>

@@ -3,6 +3,9 @@ package com.autodeploy.controller;
 import com.autodeploy.model.BuildRecord;
 import com.autodeploy.service.BuildHistoryService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,17 +20,42 @@ public class BuildHistoryController {
 
   @Autowired private BuildHistoryService historyService;
 
+  private static final int PAGE_SIZE = 15;
+
   @GetMapping("/history")
   public String historyPage(
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(required = false) String projectName,
       @RequestParam(required = false) String status,
-      @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd")
-          LocalDateTime dateFrom,
-      @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDateTime dateTo,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
+      @RequestParam(required = false) Long recordId,
       Model model) {
+    LocalDateTime from = dateFrom != null ? dateFrom.atStartOfDay() : null;
+    LocalDateTime to = dateTo != null ? dateTo.plusDays(1).atStartOfDay().minusNanos(1) : null;
+
+    if (recordId != null) {
+      int targetPage =
+          historyService.getPageForRecord(recordId, projectName, status, from, to, PAGE_SIZE);
+      if (targetPage != page) {
+        StringBuilder redirect = new StringBuilder("redirect:/history?page=").append(targetPage);
+        if (projectName != null) {
+          try {
+            redirect.append("&projectName=").append(URLEncoder.encode(projectName, "UTF-8"));
+          } catch (UnsupportedEncodingException e) {
+            redirect.append("&projectName=").append(projectName);
+          }
+        }
+        if (status != null) redirect.append("&status=").append(status);
+        if (dateFrom != null) redirect.append("&dateFrom=").append(dateFrom);
+        if (dateTo != null) redirect.append("&dateTo=").append(dateTo);
+        redirect.append("&recordId=").append(recordId);
+        return redirect.toString();
+      }
+    }
+
     Page<BuildRecord> records =
-        historyService.queryRecords(page, 15, projectName, status, dateFrom, dateTo);
+        historyService.queryRecords(page, PAGE_SIZE, projectName, status, from, to);
     model.addAttribute("records", records.getRecords());
     model.addAttribute("currentPage", page);
     model.addAttribute("totalPages", records.getPages());
