@@ -152,12 +152,8 @@ public class ArtifactResolver {
         return;
       }
     }
-    // Fallback to target directory or module dir
-    if (targetDir.isDirectory()) {
-      artifacts.add(targetDir);
-    } else {
-      artifacts.add(moduleDir);
-    }
+    // No JAR files found - don't fall back to directory upload
+    log.accept("模块 [" + moduleDir.getName() + "] 未找到 JAR 文件");
   }
 
   private static void resolveNodeArtifacts(
@@ -214,7 +210,8 @@ public class ArtifactResolver {
     if (executables != null && executables.length > 0) {
       artifacts.add(executables[0]);
     } else {
-      artifacts.add(moduleDir);
+      // No executable found - don't fall back to directory upload
+      log.accept("模块 [" + moduleDir.getName() + "] 未找到可执行文件");
     }
   }
 
