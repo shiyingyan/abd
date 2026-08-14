@@ -31,8 +31,7 @@ public class SessionExpiryFilter implements Filter {
     }
 
     Subject subject = SecurityUtils.getSubject();
-    log.debug(
-        "SessionExpiryFilter: uri={}, pre-authenticated={}", uri, subject.isAuthenticated());
+    log.debug("SessionExpiryFilter: uri={}, pre-authenticated={}", uri, subject.isAuthenticated());
 
     // Load session first (triggers DB lookup on cache miss, e.g. after restart)
     // before checking authentication state, so that principals can be restored.

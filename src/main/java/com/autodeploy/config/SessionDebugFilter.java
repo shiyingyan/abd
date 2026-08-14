@@ -1,10 +1,10 @@
 package com.autodeploy.config;
 
-import com.autodeploy.repository.ShiroSessionRepository;
 import com.autodeploy.model.ShiroSession;
+import com.autodeploy.repository.ShiroSessionRepository;
 import java.io.ByteArrayInputStream;
-import java.io.ObjectInputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.util.Base64;
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
@@ -53,14 +53,20 @@ public class SessionDebugFilter implements Filter {
           byte[] data = Base64.getDecoder().decode(row.getSessionData());
           try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(data))) {
             Session session = (Session) ois.readObject();
-            Object principals = session.getAttribute(
-                "org.apache.shiro.subject.support.DefaultSubjectContext_PRINCIPALS_SESSION_KEY");
-            log.info("SessionDebugFilter DIRECT-DB: uri={}, cookieId={}, principals={}",
-                uri, cookieId,
-                principals != null ? principals.getClass().getSimpleName() + "=" + principals : "null");
+            Object principals =
+                session.getAttribute(
+                    "org.apache.shiro.subject.support.DefaultSubjectContext_PRINCIPALS_SESSION_KEY");
+            log.info(
+                "SessionDebugFilter DIRECT-DB: uri={}, cookieId={}, principals={}",
+                uri,
+                cookieId,
+                principals != null
+                    ? principals.getClass().getSimpleName() + "=" + principals
+                    : "null");
           }
         } else {
-          log.info("SessionDebugFilter DIRECT-DB: uri={}, cookieId={}, NOT FOUND IN DB", uri, cookieId);
+          log.info(
+              "SessionDebugFilter DIRECT-DB: uri={}, cookieId={}, NOT FOUND IN DB", uri, cookieId);
         }
       } catch (Exception e) {
         log.error("SessionDebugFilter DIRECT-DB error: {}", e.getMessage());

@@ -118,11 +118,11 @@ public class JdbcSessionDAO implements SessionDAO {
       try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(data))) {
         Session session = (Session) ois.readObject();
         long timeout = session.getTimeout();
-        boolean expired =
-            session instanceof SimpleSession && ((SimpleSession) session).isExpired();
-        boolean hasPrincipals = session.getAttribute(
-                "org.apache.shiro.subject.support.DefaultSubjectContext_PRINCIPALS_SESSION_KEY")
-            != null;
+        boolean expired = session instanceof SimpleSession && ((SimpleSession) session).isExpired();
+        boolean hasPrincipals =
+            session.getAttribute(
+                    "org.apache.shiro.subject.support.DefaultSubjectContext_PRINCIPALS_SESSION_KEY")
+                != null;
         boolean hasAuthenticated =
             session.getAttribute(
                     "org.apache.shiro.subject.support.DefaultSubjectContext_AUTHENTICATED_SESSION_KEY")
@@ -141,9 +141,11 @@ public class JdbcSessionDAO implements SessionDAO {
           return null;
         }
         sessionCache.put(id, session);
-        principalsPersisted.put(id, session.getAttribute(
-                "org.apache.shiro.subject.support.DefaultSubjectContext_PRINCIPALS_SESSION_KEY")
-            != null);
+        principalsPersisted.put(
+            id,
+            session.getAttribute(
+                    "org.apache.shiro.subject.support.DefaultSubjectContext_PRINCIPALS_SESSION_KEY")
+                != null);
         authenticatedPersisted.put(id, hasAuthenticated);
         lastDbWriteTime.putIfAbsent(id, System.currentTimeMillis());
         return session;
@@ -226,7 +228,10 @@ public class JdbcSessionDAO implements SessionDAO {
       log.info("persistRow() session {}: THROTTLED (lastWrite={}ms ago)", id, now - lastWrite);
       return;
     }
-    log.info("persistRow() session {}: WRITING to DB (force={}, lastWrite={})", id, force,
+    log.info(
+        "persistRow() session {}: WRITING to DB (force={}, lastWrite={})",
+        id,
+        force,
         lastWrite == null ? "never" : (now - lastWrite) + "ms ago");
 
     try {

@@ -105,10 +105,10 @@ public class AuthController {
       org.apache.shiro.session.Session session = subject.getSession(false);
       result.put("sessionId", session != null ? session.getId() : null);
       if (session != null) {
-        Object principals = session.getAttribute(
-            "org.apache.shiro.subject.support.DefaultSubjectContext_PRINCIPALS_SESSION_KEY");
-        result.put("sessionPrincipals",
-            principals != null ? principals.toString() : null);
+        Object principals =
+            session.getAttribute(
+                "org.apache.shiro.subject.support.DefaultSubjectContext_PRINCIPALS_SESSION_KEY");
+        result.put("sessionPrincipals", principals != null ? principals.toString() : null);
       }
     } catch (Exception e) {
       result.put("error", e.getMessage());

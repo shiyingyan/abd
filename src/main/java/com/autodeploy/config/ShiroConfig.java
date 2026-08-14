@@ -17,8 +17,6 @@ import org.apache.shiro.session.mgt.eis.SessionDAO;
 import org.apache.shiro.spring.web.ShiroFilterFactoryBean;
 import org.apache.shiro.spring.web.config.DefaultShiroFilterChainDefinition;
 import org.apache.shiro.spring.web.config.ShiroFilterChainDefinition;
-import org.apache.shiro.subject.Subject;
-import org.apache.shiro.subject.SubjectContext;
 import org.apache.shiro.web.mgt.DefaultWebSecurityManager;
 import org.apache.shiro.web.mgt.DefaultWebSubjectFactory;
 import org.apache.shiro.web.session.mgt.DefaultWebSessionManager;
@@ -129,9 +127,9 @@ public class ShiroConfig {
   /**
    * Override Shiro's default authc filter to restore authentication state from the session. Shiro
    * 1.13.0 does not restore the {@code authenticated} flag from the session after an application
-   * restart, so even though the session contains valid principals, {@code subject.isAuthenticated()}
-   * returns false. This custom filter compensates by re-authenticating the subject when principals
-   * are found in the session.
+   * restart, so even though the session contains valid principals, {@code
+   * subject.isAuthenticated()} returns false. This custom filter compensates by re-authenticating
+   * the subject when principals are found in the session.
    */
   @Bean
   public org.apache.shiro.web.filter.authc.FormAuthenticationFilter formAuthenticationFilter() {

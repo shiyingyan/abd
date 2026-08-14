@@ -6,7 +6,7 @@ This file provides guidance to the AI agent when working with code in this repos
 
 ```bash
 mvn clean package          # Build JAR (output: target/auto-deploy.jar)
-mvn spring-boot:run        # Run dev server on port 8080
+mvn spring-boot:run        # Run dev server on port 8081
 mvn test                   # Run tests
 ```
 
@@ -33,10 +33,9 @@ UI labels, validation messages, and user-facing strings are in Chinese. Write ne
 - App creates `~/.autodeploy/` working directories on first startup
 - Language runtime managers (SDKMAN, nvm, gvm, uv) must be pre-installed for runtime version management features
 
-## Branch & Commit Conventions
+## Branch Conventions
 
 - Branch naming: `feature/xxx`, `fix/xxx`
-- Commit messages in English
 
 ## Testing
 
@@ -61,7 +60,7 @@ com.autodeploy
 
 - **Dual controllers**: Every controller uses `@Controller` (not `@RestController`). Page routes return view name strings; API routes under `/api/` use `@ResponseBody`. No separate page/API controller split.
 - **No DTOs**: Domain entities are serialized directly to JSON. No projection or DTO layer.
-- **No global exception handler**: No `@ControllerAdvice`. Services return `null` on success or error message strings. Controllers check and add to `Model`.
+- **Minimal exception handling**: Only one narrow `@ControllerAdvice` (`GlobalExceptionHandler`). Services return `null` on success or error message strings. Controllers check and add to `Model`.
 - **Field injection**: All services use `@Autowired` field injection, not constructor injection.
 - **Query construction**: Queries are built in services via `QueryWrapper`, not in repositories.
 - **List sorting**: All list queries must use `orderByDesc` by `id` or time field (e.g. `created_at`, `updated_at`, `build_time`) so the newest records appear first. Never use `orderByAsc` for user-facing lists. Exception: build queue processing (`processQueue`) sorts by `priority` DESC then `submit_time` DESC to determine execution order.
@@ -102,3 +101,7 @@ Build task state lives only in `ConcurrentHashMap<String, BuildTask>` — **lost
 - `LanguageRuntimeController` spawns raw `new Thread()` bypassing the managed pool
 - `ConfigService.getSnapshot()` does manual field-by-field copy instead of BeanUtils
 - Remote build mode (`REMOTE`) infrastructure exists in settings but is not fully wired into the pipeline
+
+## Personal Instructions
+
+Create `AGENTS.local.md` at the repo root for private, per-user guidance (local paths, personal workflow preferences). It is loaded with higher priority than this file and should not be committed.
