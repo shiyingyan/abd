@@ -104,27 +104,12 @@
                             </div>
                         </div>
 
-                        <!-- Duplicate error (shown when AJAX detects a duplicate executing task) -->
-                        <div class="mt-3" id="duplicateErrorSection" style="display:none;">
-                            <div class="alert alert-danger py-2 px-3 mb-2">
-                                <strong>有相同任务在排队或执行中，无需重复提交</strong>
+                        <!-- Queue warning (shown when a task must be queued due to server overlap) -->
+                        <div class="mt-3" id="queueWarningSection" style="display:none;">
+                            <div class="alert alert-warning py-2 px-3 mb-2">
+                                <strong id="queueWarningReason">当前项目有部署目标服务器重叠的任务正在执行，任务将排队等候</strong>
                                 <div class="form-text mt-1">
-                                    同一项目、分支、部署服务器和部署环境已有相同任务在排队或执行中。
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Force start option (shown when no duplicate, lets user choose immediate vs queue) -->
-                        <div class="mt-3" id="forceStartSection" style="display:none;">
-                            <div class="alert alert-info py-2 px-3 mb-2">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="forceStartToggle" name="forceStart" value="true">
-                                    <label class="form-check-label" for="forceStartToggle">
-                                        <strong>强制开始构建</strong>
-                                    </label>
-                                </div>
-                                <div class="form-text mt-1">
-                                    勾选：立即基于 origin/目标分支 创建 worktree 并开始构建。不勾选：任务进入队列排队等候。
+                                    任务已进入队列，将按优先级和提交时间排序执行。可在任务列表中取消排队任务。
                                 </div>
                             </div>
                         </div>
@@ -515,20 +500,17 @@
         });
 
         $.get('/api/build/check-duplicate', params, function(data) {
-            if (data.duplicate) {
-                // Duplicate → show error, block submit
-                $('#duplicateErrorSection').show();
-                $('#forceStartSection').hide();
-            } else if (data.hasSameUserProject) {
-                // Non-duplicate but same user+project → show force-start option
-                $('#duplicateErrorSection').hide();
-                $('#forceStartSection').show();
+            if (data.mustQueue) {
+                // Must queue due to server overlap → show warning, then auto-submit to enqueue
+                $('#queueWarningSection').show();
+                if (data.reason) {
+                    $('#queueWarningReason').text(data.reason);
+                }
                 skipDuplicateCheck = true;
                 form.submit();
             } else {
-                // Different user or project → submit directly, no force option
-                $('#duplicateErrorSection').hide();
-                $('#forceStartSection').hide();
+                // No conflict → submit directly
+                $('#queueWarningSection').hide();
                 skipDuplicateCheck = true;
                 form.submit();
             }
@@ -542,9 +524,7 @@
 
     // Hide warnings when project/branch/env changes
     $('#configSelect, #branchSelect').change(function() {
-        $('#duplicateErrorSection').hide();
-        $('#forceStartSection').hide();
-        $('#forceStartToggle').prop('checked', false);
+        $('#queueWarningSection').hide();
         checkBranchMismatch();
     });
 

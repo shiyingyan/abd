@@ -27,8 +27,10 @@ public class BuildHistoryController {
       @RequestParam(defaultValue = "1") int page,
       @RequestParam(required = false) String projectName,
       @RequestParam(required = false) String status,
-      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
-      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+          LocalDate dateFrom,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+          LocalDate dateTo,
       @RequestParam(required = false) Long recordId,
       Model model) {
     LocalDateTime from = dateFrom != null ? dateFrom.atStartOfDay() : null;

@@ -44,25 +44,15 @@ public class BuildController {
       @RequestParam(required = false) List<Long> envIds,
       @RequestParam(required = false) String autoDeploy,
       @RequestParam(required = false) String selectedBranch,
-      @RequestParam(required = false) String forceStart,
       @RequestParam(required = false) String skipGitPull,
       Model model) {
     String username = (String) SecurityUtils.getSubject().getPrincipal();
     boolean auto = !"false".equalsIgnoreCase(autoDeploy);
-    boolean force = "true".equalsIgnoreCase(forceStart);
     boolean skipPull = "true".equalsIgnoreCase(skipGitPull);
 
     Map<String, Object> result =
         buildQueueService.submitTask(
-            configId,
-            buildMode,
-            username,
-            modulePaths,
-            envIds,
-            auto,
-            selectedBranch,
-            force,
-            skipPull);
+            configId, buildMode, username, modulePaths, envIds, auto, selectedBranch, skipPull);
 
     if (result.containsKey("error")) {
       model.addAttribute("error", result.get("error"));
@@ -130,11 +120,18 @@ public class BuildController {
       @RequestParam(required = false) String selectedBranch,
       @RequestParam(required = false) List<Long> envIds) {
     String username = (String) SecurityUtils.getSubject().getPrincipal();
-    boolean duplicate = buildQueueService.isDuplicate(username, configId, selectedBranch, envIds);
-    boolean hasSameUserProject = buildQueueService.hasSameUserProjectTasks(username, configId);
+    String deployServersKey = buildQueueService.resolveDeployServersKey(configId, envIds);
+    com.autodeploy.model.ProjectConfig snapshot = configService.getSnapshot(configId);
+    String strategy = "direct";
+    if (snapshot != null) {
+      strategy = buildQueueService.decideBuildStrategy(snapshot, username, deployServersKey);
+    }
+    boolean mustQueue = "queue".equals(strategy);
     Map<String, Object> result = new HashMap<>();
-    result.put("duplicate", duplicate);
-    result.put("hasSameUserProject", hasSameUserProject);
+    result.put("mustQueue", mustQueue);
+    if (mustQueue) {
+      result.put("reason", "当前项目有部署目标服务器重叠的任务正在执行，任务将排队等候");
+    }
     return result;
   }
 

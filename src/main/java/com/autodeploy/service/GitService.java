@@ -333,7 +333,8 @@ public class GitService {
    * directory. Uses command-line git since JGit does not support worktree. Returns the absolute
    * path of the worktree directory.
    */
-  public String createWorktree(ProjectConfig config, String branch) throws Exception {
+  public String createWorktree(ProjectConfig config, String branch, String username)
+      throws Exception {
     String projectDir = config.getProjectDir();
     if (projectDir == null || projectDir.trim().isEmpty()) {
       throw new IllegalStateException("项目目录未配置，无法创建 worktree");
@@ -355,11 +356,15 @@ public class GitService {
       fetchCmd.call();
     }
 
-    // Generate unique worktree path
+    // Generate unique worktree path with username for traceability
     String tempBase = System.getProperty("java.io.tmpdir");
-    String safeBranch = branch.replaceAll("[^a-zA-Z0-9_-]", "_");
+    String safeBranch = (branch != null ? branch : "HEAD").replaceAll("[^a-zA-Z0-9_-]", "_");
+    String safeUsername =
+        (username != null ? username : "unknown").replaceAll("[^a-zA-Z0-9_-]", "_");
     String worktreeName =
         config.getProjectName()
+            + "_"
+            + safeUsername
             + "_"
             + java.util.UUID.randomUUID().toString().substring(0, 8)
             + "_"

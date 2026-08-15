@@ -76,7 +76,6 @@ public class BuildQueueService {
       List<Long> envIds,
       Boolean autoDeploy,
       String selectedBranch,
-      boolean forceStart,
       boolean skipGitPull) {
 
     ProjectConfig snapshot = configService.getSnapshot(configId);
@@ -86,7 +85,7 @@ public class BuildQueueService {
       return result;
     }
 
-    // Check branch mismatch with uncommitted changes
+    // Check branch mismatch with uncommitted changes (Rule 0 — keep current behavior)
     String projectDir = snapshot.getProjectDir();
     if (projectDir != null && !projectDir.trim().isEmpty()) {
       java.io.File repoDir = new java.io.File(projectDir.trim());
@@ -112,21 +111,11 @@ public class BuildQueueService {
       }
     }
 
-    // Resolve deploy server/env IDs for duplicate comparison
+    // Resolve deploy server/env IDs for comparison
     String deployServersKey = resolveDeployServersKey(configId, envIds);
     String deployEnvsKey = resolveDeployEnvsKey(envIds);
 
-    // Check for duplicate (same user + same project + same branch/servers/envs)
-    boolean isDuplicate =
-        checkDuplicate(username, configId, selectedBranch, deployServersKey, deployEnvsKey);
-
-    if (isDuplicate) {
-      Map<String, Object> result = new HashMap<>();
-      result.put("error", "有相同任务在排队或执行中，无需重复提交");
-      return result;
-    }
-
-    // skipGitPull → build directly in project directory, no git pull, no uncommitted check
+    // skipGitPull → build directly in project directory, no git pull, no queue logic
     if (skipGitPull) {
       return startDirectBuild(
           snapshot,
@@ -140,12 +129,22 @@ public class BuildQueueService {
           true);
     }
 
-    // Non-duplicate
-    boolean hasSameUserProject = hasSameUserProjectTasks(username, configId);
+    // Decide build strategy based on executing tasks (Rules 1-2.3)
+    // Synchronized to prevent two concurrent submissions from both bypassing queue
+    synchronized (this) {
+      String strategy = decideBuildStrategy(snapshot, username, deployServersKey);
 
-    if (hasSameUserProject) {
-      // Same user + same project: apply force/queue logic
-      if (forceStart) {
+      if ("queue".equals(strategy)) {
+        return enqueueTask(
+            snapshot,
+            buildMode,
+            username,
+            modulePaths,
+            envIds,
+            autoDeploy,
+            selectedBranch,
+            deployServersKey);
+      } else if ("worktree".equals(strategy)) {
         return startImmediateBuild(
             snapshot,
             buildMode,
@@ -156,7 +155,7 @@ public class BuildQueueService {
             selectedBranch,
             deployServersKey);
       } else {
-        return enqueueTask(
+        return startDirectBuild(
             snapshot,
             buildMode,
             username,
@@ -164,20 +163,9 @@ public class BuildQueueService {
             envIds,
             autoDeploy,
             selectedBranch,
-            deployServersKey);
+            deployServersKey,
+            false);
       }
-    } else {
-      // Different user or different project: build directly in project directory (no worktree)
-      return startDirectBuild(
-          snapshot,
-          buildMode,
-          username,
-          modulePaths,
-          envIds,
-          autoDeploy,
-          selectedBranch,
-          deployServersKey,
-          false);
     }
   }
 
@@ -198,7 +186,70 @@ public class BuildQueueService {
     return buildQueueRepository.selectCount(wrapper) > 0;
   }
 
-  private String resolveDeployServersKey(Long configId, List<Long> envIds) {
+  /** Get all currently executing queue tasks. */
+  private List<BuildQueueTask> getExecutingTasks() {
+    QueryWrapper<BuildQueueTask> wrapper = new QueryWrapper<>();
+    wrapper.eq("status", BuildQueueTask.STATUS_EXECUTING);
+    return buildQueueRepository.selectList(wrapper);
+  }
+
+  /**
+   * Check if two deploy-server keys have any overlap. Each key is a sorted comma-separated list of
+   * server IDs. Returns true if there is at least one common server.
+   */
+  private boolean hasServerOverlap(String existingServers, String currentServers) {
+    if (existingServers == null || existingServers.isEmpty()) return false;
+    if (currentServers == null || currentServers.isEmpty()) return false;
+    java.util.Set<String> existing = new java.util.HashSet<>();
+    for (String s : existingServers.split(",")) {
+      existing.add(s.trim());
+    }
+    for (String s : currentServers.split(",")) {
+      if (existing.contains(s.trim())) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Decide the build strategy for a new task based on currently executing tasks. Returns: "direct"
+   * - build directly in project directory "worktree" - build using git worktree "queue" - enqueue
+   * the task for later execution
+   *
+   * <p>Rules: 1. No executing tasks → direct 2.1 Different project → direct (skip) 2.2 Same project
+   * + has projectDir: ① servers no overlap → worktree ② servers overlap → queue 2.3 Same project +
+   * no projectDir: ① servers no overlap + different user → direct ② servers no overlap + same user
+   * → worktree ③ servers overlap → queue
+   */
+  public String decideBuildStrategy(
+      ProjectConfig config, String username, String deployServersKey) {
+    List<BuildQueueTask> executing = getExecutingTasks();
+    if (executing.isEmpty()) return "direct";
+
+    boolean hasProjectDir =
+        config.getProjectDir() != null && !config.getProjectDir().trim().isEmpty();
+
+    for (BuildQueueTask task : executing) {
+      if (!task.getConfigId().equals(config.getId())) continue; // different project, skip
+
+      // Same project
+      if (hasServerOverlap(task.getDeployServers(), deployServersKey)) {
+        return "queue"; // servers overlap → queue (Rules 2.2②, 2.3③)
+      }
+
+      // Servers have no overlap
+      if (hasProjectDir) {
+        return "worktree"; // Rule 2.2①
+      } else {
+        if (username.equals(task.getUsername())) {
+          return "worktree"; // Rule 2.3②: same user → worktree
+        }
+        // Rule 2.3①: different user → continue checking other tasks
+      }
+    }
+    return "direct"; // No conflicts found (Rules 1, 2.1, 2.3①)
+  }
+
+  public String resolveDeployServersKey(Long configId, List<Long> envIds) {
     if (envIds == null || envIds.isEmpty()) {
       return "";
     }
@@ -280,7 +331,7 @@ public class BuildQueueService {
     try {
       // Create worktree and start build BEFORE inserting DB record,
       // so the frontend never sees EXECUTING without a buildTaskId.
-      worktreePath = gitService.createWorktree(snapshot, selectedBranch);
+      worktreePath = gitService.createWorktree(snapshot, selectedBranch, username);
 
       BuildQueueTask queueTask =
           createQueueTask(
@@ -552,11 +603,32 @@ public class BuildQueueService {
 
     List<BuildQueueTask> candidates = buildQueueRepository.selectList(wrapper);
     BuildQueueTask nextTask = null;
+
+    // Get currently executing tasks for overlap checking
+    List<BuildQueueTask> executingTasks = getExecutingTasks();
+
     for (BuildQueueTask candidate : candidates) {
-      if (preparingTasks.add(candidate.getId())) {
-        nextTask = candidate;
-        break;
+      if (!preparingTasks.add(candidate.getId())) {
+        continue; // already being processed
       }
+
+      // Check if this candidate conflicts with any currently executing task
+      boolean conflicts = false;
+      for (BuildQueueTask exec : executingTasks) {
+        if (!exec.getConfigId().equals(candidate.getConfigId())) continue;
+        if (hasServerOverlap(exec.getDeployServers(), candidate.getDeployServers())) {
+          conflicts = true;
+          break;
+        }
+      }
+
+      if (conflicts) {
+        preparingTasks.remove(candidate.getId());
+        continue; // skip this candidate, try next
+      }
+
+      nextTask = candidate;
+      break;
     }
     if (nextTask == null) {
       // No task picked — count as empty cycle
@@ -579,7 +651,7 @@ public class BuildQueueService {
 
   private void executeQueuedTask(BuildQueueTask queueTask) {
     String worktreePath = null;
-    boolean useWorktree = false;
+    boolean deferred = false;
     try {
       ProjectConfig snapshot = configService.getSnapshot(queueTask.getConfigId());
       if (snapshot == null) {
@@ -594,14 +666,25 @@ public class BuildQueueService {
       List<String> modules = parseList(queueTask.getSelectedModules());
       List<Long> envIds = parseLongList(queueTask.getDeployEnvironments());
 
-      // Check if there are other EXECUTING tasks for the same project
-      useWorktree = hasOtherExecutingTasks(queueTask.getId(), queueTask.getConfigId());
+      // Dynamically decide build strategy at dequeue time (conditions may have changed)
+      String strategy =
+          decideBuildStrategy(snapshot, queueTask.getUsername(), queueTask.getDeployServers());
 
+      if ("queue".equals(strategy)) {
+        // Still conflicts — re-enqueue and wait for next cycle; do NOT touch the DB record
+        preparingTasks.remove(queueTask.getId());
+        deferred = true;
+        return;
+      }
+
+      boolean useWorktree = "worktree".equals(strategy);
       String taskId;
       if (useWorktree) {
         // Create worktree and start build BEFORE updating DB status,
         // so the frontend never sees EXECUTING without a buildTaskId.
-        worktreePath = gitService.createWorktree(snapshot, queueTask.getTargetBranch());
+        worktreePath =
+            gitService.createWorktree(
+                snapshot, queueTask.getTargetBranch(), queueTask.getUsername());
 
         taskId =
             buildService.startBuildFromWorktree(
@@ -615,7 +698,7 @@ public class BuildQueueService {
                 worktreePath,
                 queueTask.getId());
       } else {
-        // No other tasks running for this project, build directly in project directory
+        // No conflicts, build directly in project directory
         taskId =
             buildService.startBuild(
                 snapshot.getId(),
@@ -682,12 +765,19 @@ public class BuildQueueService {
     } catch (Exception e) {
       log.error("Queue task {} failed", queueTask.getId(), e);
       preparingTasks.remove(queueTask.getId());
-      queueTask.setStatus(BuildQueueTask.STATUS_FAILURE);
-      queueTask.setErrorMessage(e.getMessage());
+      if (!deferred) {
+        queueTask.setStatus(BuildQueueTask.STATUS_FAILURE);
+        queueTask.setErrorMessage(e.getMessage());
+      }
     } finally {
-      queueTask.setCompletionTime(LocalDateTime.now());
-      queueTask.setUpdatedAt(LocalDateTime.now());
-      buildQueueRepository.updateById(queueTask);
+      if (!deferred) {
+        queueTask.setCompletionTime(LocalDateTime.now());
+        queueTask.setUpdatedAt(LocalDateTime.now());
+        buildQueueRepository.updateById(queueTask);
+      }
+      // Restart scheduler so any remaining QUEUED tasks are re-evaluated
+      // now that a slot has freed up (fixes Issue 3: scheduler stops prematurely)
+      startScheduling();
 
       if (worktreePath != null) {
         gitService.removeWorktree(worktreePath);
@@ -974,6 +1064,55 @@ public class BuildQueueService {
 
   public boolean isSchedulingActive() {
     return schedulingActive || systemSettingsService.isQueueSchedulerAlwaysOn();
+  }
+
+  /**
+   * Clean up orphaned worktree directories older than 24 hours. Runs daily at 3 AM. Only deletes
+   * worktrees that are not currently referenced by any EXECUTING or QUEUED task in the database.
+   */
+  @Scheduled(cron = "0 0 3 * * ?")
+  public void cleanupOrphanedWorktrees() {
+    String tempBase = System.getProperty("java.io.tmpdir");
+    java.io.File worktreesDir = java.nio.file.Paths.get(tempBase, "autodeploy-worktrees").toFile();
+    if (!worktreesDir.exists() || !worktreesDir.isDirectory()) {
+      return;
+    }
+
+    java.io.File[] dirs = worktreesDir.listFiles(java.io.File::isDirectory);
+    if (dirs == null) return;
+
+    // Collect worktree paths currently in use by active tasks
+    QueryWrapper<BuildQueueTask> activeWrapper = new QueryWrapper<>();
+    activeWrapper
+        .isNotNull("worktree_path")
+        .in("status", Arrays.asList(BuildQueueTask.STATUS_EXECUTING, BuildQueueTask.STATUS_QUEUED));
+    List<BuildQueueTask> activeTasks = buildQueueRepository.selectList(activeWrapper);
+    java.util.Set<String> activePaths = new java.util.HashSet<>();
+    for (BuildQueueTask t : activeTasks) {
+      if (t.getWorktreePath() != null) {
+        activePaths.add(t.getWorktreePath());
+      }
+    }
+
+    long cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L;
+    int cleaned = 0;
+    for (java.io.File dir : dirs) {
+      String absPath = dir.getAbsolutePath();
+      // Skip worktrees still referenced by active tasks
+      if (activePaths.contains(absPath)) continue;
+      // Only clean if directory is older than 24 hours (based on creation/modification time)
+      if (dir.lastModified() < cutoff) {
+        try {
+          gitService.removeWorktree(absPath);
+          cleaned++;
+        } catch (Exception e) {
+          log.warn("Failed to clean orphaned worktree {}: {}", absPath, e.getMessage());
+        }
+      }
+    }
+    if (cleaned > 0) {
+      log.info("Cleaned up {} orphaned worktree(s) older than 24 hours", cleaned);
+    }
   }
 
   private List<String> parseList(String commaSeparated) {
