@@ -31,7 +31,7 @@ public class SessionDebugFilter implements Filter {
     HttpServletRequest httpReq = (HttpServletRequest) request;
     String uri = httpReq.getRequestURI();
 
-    if (uri.startsWith("/static/") || uri.equals("/favicon.ico") || uri.equals("/login")) {
+    if (uri.startsWith("/static/") || uri.equals("/favicon.ico") || uri.equals("/login") || uri.equals("/error")) {
       chain.doFilter(request, response);
       return;
     }

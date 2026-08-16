@@ -78,6 +78,7 @@ public class SessionExpiryFilter implements Filter {
   private boolean isAnonymousPath(String uri) {
     return uri.equals("/login")
         || uri.equals("/register")
+        || uri.equals("/error")
         || uri.startsWith("/static/")
         || uri.startsWith("/api/auth/");
   }

@@ -120,6 +120,7 @@ public class ShiroConfig {
     chainDefinition.addPathDefinition("/register", "anon");
     chainDefinition.addPathDefinition("/static/**", "anon");
     chainDefinition.addPathDefinition("/api/auth/**", "anon");
+    chainDefinition.addPathDefinition("/error", "anon");
     chainDefinition.addPathDefinition("/**", "authc");
     return chainDefinition;
   }

@@ -7,7 +7,8 @@
       "Read(//c/Users/Administrator.DESKTOP-52A45T0/.autodeploy/logs/system/**)",
       "mcp__dm-mcp-server-dev__dev_list_tables",
       "mcp__dm-mcp-server-dev__*",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(find d:/code/tools/auto-deploy/src/main/resources -name \"login*\" -o -name \"app.js\" | head -20)"
     ]
   }
 }

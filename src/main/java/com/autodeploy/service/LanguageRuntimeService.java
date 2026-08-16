@@ -207,7 +207,10 @@ public class LanguageRuntimeService {
         while ((line = reader.readLine()) != null) {
           java.util.regex.Matcher matcher = versionPattern.matcher(line);
           if (matcher.find()) {
-            versions.add(matcher.group());
+            String version = matcher.group();
+            if (!versions.contains(version)) {
+              versions.add(version);
+            }
           }
         }
       }
