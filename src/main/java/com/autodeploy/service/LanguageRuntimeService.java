@@ -4,16 +4,20 @@ import com.autodeploy.model.LanguageType;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class LanguageRuntimeService {
 
   private static final Logger log = LoggerFactory.getLogger(LanguageRuntimeService.class);
+
+  @Autowired private WindowsRuntimeScanner windowsScanner;
 
   /** Cached result of shell detection: "zsh" or "bash". */
   private static volatile String detectedShell;
@@ -188,6 +192,14 @@ public class LanguageRuntimeService {
 
   /** List installed versions for a language. Uses OS-appropriate shell and commands. */
   public List<String> listInstalledVersions(LanguageType language) {
+    if (isWindows() && (language == LanguageType.JAVA || language == LanguageType.GO)) {
+      Map<String, String> installations =
+          (language == LanguageType.JAVA)
+              ? windowsScanner.getJavaInstallations()
+              : windowsScanner.getGoInstallations();
+      return new ArrayList<>(installations.keySet());
+    }
+
     List<String> versions = new ArrayList<>();
     try {
       String command = language.getListCommand();
@@ -224,6 +236,24 @@ public class LanguageRuntimeService {
     return versions;
   }
 
+  /**
+   * Returns a map of version string to installation directory path. On Windows for Java/Go, uses
+   * directory scanning. On Unix or for other languages, falls back to command-based detection
+   * (paths will be null).
+   */
+  public Map<String, String> listInstalledVersionsWithPaths(LanguageType language) {
+    if (isWindows() && (language == LanguageType.JAVA || language == LanguageType.GO)) {
+      return (language == LanguageType.JAVA)
+          ? windowsScanner.getJavaInstallations()
+          : windowsScanner.getGoInstallations();
+    }
+    Map<String, String> result = new LinkedHashMap<>();
+    for (String v : listInstalledVersions(language)) {
+      result.put(v, null);
+    }
+    return result;
+  }
+
   /** Generate the version switch command prefix for a build. */
   public String getSwitchCommand(LanguageType language, String version) {
     if (language == null || version == null || version.trim().isEmpty()) return "";
@@ -238,16 +268,29 @@ public class LanguageRuntimeService {
       LanguageType language, String version, String buildCommand, String customInstallDir) {
     StringBuilder sb = new StringBuilder();
     if (language != null && version != null && !version.trim().isEmpty()) {
-      if (customInstallDir != null && !customInstallDir.trim().isEmpty()) {
+      String effectiveDir = customInstallDir;
+
+      if (isWindows()
+          && (effectiveDir == null || effectiveDir.trim().isEmpty())
+          && (language == LanguageType.JAVA || language == LanguageType.GO)) {
+        Map<String, String> installations =
+            (language == LanguageType.JAVA)
+                ? windowsScanner.getJavaInstallations()
+                : windowsScanner.getGoInstallations();
+        effectiveDir = installations.get(version);
+      }
+
+      if (effectiveDir != null && !effectiveDir.trim().isEmpty()) {
         if (isWindows()) {
-          // Windows: set PATH=customDir;...
-          sb.append("set PATH=").append(customInstallDir).append("\\bin;%PATH% && ");
+          sb.append("set PATH=").append(effectiveDir).append("\\bin;%PATH% && ");
         } else {
-          // Unix: export PATH=customDir/bin:$PATH
-          sb.append("export PATH=").append(customInstallDir).append("/bin:$PATH && ");
+          sb.append("export PATH=").append(effectiveDir).append("/bin:$PATH && ");
         }
       }
-      sb.append(language.getUseCommand(version)).append(isWindows() ? " && " : " && ");
+
+      if (!isWindows()) {
+        sb.append(language.getUseCommand(version)).append(" && ");
+      }
     }
     sb.append(buildCommand);
     return sb.toString();

@@ -10,7 +10,7 @@ public enum LanguageType {
       // Windows: check java -version
       "java -version",
       "java -version",
-      "echo Please install JDK manually on Windows"),
+      "echo Windows 系统暂不支持自动安装 Java，请手动下载安装"),
   GO(
       "gvm",
       // Unix: gvm
@@ -20,7 +20,7 @@ public enum LanguageType {
       // Windows: go version
       "go version",
       "go version",
-      "echo Please install Go manually on Windows"),
+      "echo Windows 系统暂不支持自动安装 Go，请手动下载安装"),
   NODE(
       "nvm",
       // Unix: nvm

@@ -111,7 +111,7 @@
                         <input type="text" class="form-control" th:field="*{customInstallDir}"
                                placeholder="可选，留空使用默认路径"/>
                         <div class="form-text">
-                            指定语言运行时的自定义安装根目录（如 /usr/local/java-17）。构建时系统会将该目录下的 bin 子目录优先加入 PATH，适用于运行时安装在非标准路径的情况。留空则使用系统默认路径。
+                            指定语言运行时的自定义安装根目录（如 C:\Program Files\Java\jdk-17）。选择语言版本时会自动填充。构建时系统将该目录下的 bin 子目录优先加入 PATH。
                         </div>
                     </div>
                 </div>
@@ -237,28 +237,38 @@
 <th:block th:replace="fragments/common :: scripts"></th:block>
 <script th:inline="javascript">
     var currentLanguageVersion = /*[[${config.languageVersion}]]*/ '';
+    var versionPathMap = {};
+
+    function autoFillInstallDir() {
+        var select = document.getElementById('languageVersionSelect');
+        var customDirInput = $('[name="customInstallDir"]');
+        var selectedVersion = select.value;
+        if (selectedVersion && versionPathMap[selectedVersion]) {
+            customDirInput.val(versionPathMap[selectedVersion]);
+        }
+    }
 
     function loadVersions(langType) {
         var select = document.getElementById('languageVersionSelect');
         var noVersionsMsg = document.getElementById('noVersionsMsg');
         noVersionsMsg.classList.add('d-none');
+        versionPathMap = {};
 
         if (!langType) {
             select.innerHTML = '<option value="">请先选择语言类型</option>';
             return;
         }
 
-        // Show saved version immediately while loading
         if (currentLanguageVersion) {
             select.innerHTML = '<option value="' + currentLanguageVersion + '">' + currentLanguageVersion + ' (加载中...)</option>';
         } else {
             select.innerHTML = '<option value="">加载中...</option>';
         }
 
-        $.get('/api/runtime/versions', {language: langType}, function(versions) {
+        $.get('/api/runtime/versions-with-paths', {language: langType}, function(data) {
             select.innerHTML = '';
+            var versions = Object.keys(data);
             if (!versions || versions.length === 0) {
-                // Keep saved version even if no versions found from system
                 if (currentLanguageVersion) {
                     select.innerHTML = '<option value="' + currentLanguageVersion + '">' + currentLanguageVersion + '</option>';
                 } else {
@@ -267,18 +277,22 @@
                 noVersionsMsg.classList.remove('d-none');
                 return;
             }
+            versionPathMap = data;
             select.innerHTML = '<option value="">-- 选择版本 --</option>';
             versions.forEach(function(v) {
                 var opt = document.createElement('option');
                 opt.value = v;
                 opt.textContent = v;
+                if (data[v]) {
+                    opt.textContent += '  (' + data[v] + ')';
+                }
                 if (currentLanguageVersion && v.trim() === currentLanguageVersion.trim()) {
                     opt.selected = true;
                 }
                 select.appendChild(opt);
             });
+            autoFillInstallDir();
         }).fail(function() {
-            // Keep saved version on load failure
             if (currentLanguageVersion) {
                 select.innerHTML = '<option value="' + currentLanguageVersion + '">' + currentLanguageVersion + '</option>';
             } else {
@@ -290,14 +304,16 @@
     $(document).ready(function() {
         var langSelect = document.querySelector('[name="languageType"]');
         langSelect.addEventListener('change', function() {
-            // Reset saved version when user changes language type
             currentLanguageVersion = '';
             loadVersions(this.value);
         });
-        // Load versions on page load if language type is already selected
         if (langSelect.value) {
             loadVersions(langSelect.value);
         }
+
+        $('#languageVersionSelect').on('change', function() {
+            autoFillInstallDir();
+        });
 
         // Update project key preview on new project form
         var isNew = /*[[${isNew}]]*/ false;

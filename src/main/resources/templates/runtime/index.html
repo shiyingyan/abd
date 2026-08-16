@@ -8,6 +8,12 @@
         <div th:replace="fragments/common :: sidebar"></div>
         <div class="col-md-10">
             <h4>语言运行时管理</h4>
+            <div class="mb-3">
+                <button id="rescanBtn" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-clockwise me-1"></i>重新扫描
+                </button>
+                <span id="rescanStatus" class="ms-2 small text-muted"></span>
+            </div>
             <div class="row">
                 <div class="col-12 mb-3" th:each="lang : ${languages}">
                     <div class="card ad-card-hover" th:id="${lang.name + '-card'}">
@@ -44,28 +50,63 @@
 </div>
 <th:block th:replace="fragments/common :: scripts"></th:block>
 <script>
-// Load installed versions on page load
+var isWindows = navigator.userAgent.indexOf('Windows') !== -1;
+var noAutoInstallLangs = ['JAVA', 'GO'];
+
+function loadVersions(lang) {
+    $.get('/api/runtime/versions', {language: lang}, function(versions) {
+        var container = $('#' + lang + '-versions');
+        var card = $('#' + lang + '-card');
+        if (!versions || versions.length === 0) {
+            container.html('<div class="alert alert-warning py-1 px-2 mb-0 small">' +
+                '<i class="bi bi-exclamation-triangle me-1"></i>' +
+                '未安装任何版本。请先在系统中安装。</div>');
+            card.addClass('border-warning');
+        } else {
+            var badges = versions.map(function(v) {
+                return '<span class="badge bg-success me-1 mb-1">' + v.trim() + '</span>';
+            }).join('');
+            container.html('<div class="small text-muted mb-1">已安装版本：</div>' + badges);
+            card.removeClass('border-warning');
+        }
+    }).fail(function() {
+        $('#' + lang + '-versions').html('<span class="text-danger small">检测失败</span>');
+    });
+}
+
 $(document).ready(function() {
     var langs = ['JAVA', 'GO', 'NODE', 'PYTHON'];
     langs.forEach(function(lang) {
-        $.get('/api/runtime/versions', {language: lang}, function(versions) {
-            var container = $('#' + lang + '-versions');
-            var card = $('#' + lang + '-card');
-            if (!versions || versions.length === 0) {
-                container.html('<div class="alert alert-warning py-1 px-2 mb-0 small">' +
-                    '<i class="bi bi-exclamation-triangle me-1"></i>' +
-                    '未安装任何版本。请先在系统中安装。</div>');
-                card.addClass('border-warning');
+        loadVersions(lang);
+    });
+});
+
+$('#rescanBtn').click(function() {
+    var btn = $('#rescanBtn');
+    var status = $('#rescanStatus');
+    btn.prop('disabled', true).find('i').addClass('bi-arrow-repeat').removeClass('bi-arrow-clockwise');
+    status.text('扫描中...').removeClass('text-success text-danger').addClass('text-muted');
+    $.ajax({
+        url: '/api/runtime/scan',
+        type: 'POST',
+        success: function(data) {
+            btn.prop('disabled', false).find('i').removeClass('bi-arrow-repeat').addClass('bi-arrow-clockwise');
+            if (data.success) {
+                var javaCount = Object.keys(data.java || {}).length;
+                var goCount = Object.keys(data.go || {}).length;
+                status.text('扫描完成：Java ' + javaCount + ' 个版本，Go ' + goCount + ' 个版本')
+                    .removeClass('text-muted text-danger').addClass('text-success');
+                loadVersions('JAVA');
+                loadVersions('GO');
             } else {
-                var badges = versions.map(function(v) {
-                    return '<span class="badge bg-success me-1 mb-1">' + v.trim() + '</span>';
-                }).join('');
-                container.html('<div class="small text-muted mb-1">已安装版本：</div>' + badges);
-                card.removeClass('border-warning');
+                status.text('扫描失败: ' + (data.error || '未知错误'))
+                    .removeClass('text-muted text-success').addClass('text-danger');
             }
-        }).fail(function() {
-            $('#' + lang + '-versions').html('<span class="text-danger small">检测失败</span>');
-        });
+        },
+        error: function() {
+            btn.prop('disabled', false).find('i').removeClass('bi-arrow-repeat').addClass('bi-arrow-clockwise');
+            status.text('扫描请求失败').removeClass('text-muted text-success').addClass('text-danger');
+        }
     });
 });
 
@@ -79,9 +120,14 @@ $('.check-btn').click(function() {
             status.html('<span class="text-success"><i class="bi bi-check-circle me-1"></i>已安装</span>');
             $('.install-btn[data-lang="' + lang + '"]').addClass('d-none');
         } else {
-            status.html('<span class="text-warning"><i class="bi bi-exclamation-circle me-1"></i>未安装</span>');
-            var btn = $('.install-btn[data-lang="' + lang + '"]');
-            btn.removeClass('d-none').data('version', version);
+            if (isWindows && noAutoInstallLangs.indexOf(lang) !== -1) {
+                status.html('<span class="text-info"><i class="bi bi-info-circle me-1"></i>' +
+                    '未安装。Windows 暂不支持自动安装，请手动下载安装后点击「重新扫描」。</span>');
+            } else {
+                status.html('<span class="text-warning"><i class="bi bi-exclamation-circle me-1"></i>未安装</span>');
+                var btn = $('.install-btn[data-lang="' + lang + '"]');
+                btn.removeClass('d-none').data('version', version);
+            }
         }
     });
 });
