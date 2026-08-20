@@ -60,11 +60,26 @@ public class LanguageRuntimeController {
     return runtimeService.listInstalledVersionsWithPaths(lang);
   }
 
+  @GetMapping("/api/runtime/system-version")
+  @ResponseBody
+  public java.util.Map<String, Object> getSystemVersion(@RequestParam String language) {
+    LanguageType lang = LanguageType.fromString(language);
+    java.util.Map<String, Object> result = new java.util.HashMap<>();
+    if (lang == null) {
+      result.put("version", null);
+      return result;
+    }
+    String version = runtimeService.getSystemVersion(lang);
+    result.put("version", version);
+    return result;
+  }
+
   @PostMapping("/api/runtime/scan")
   @ResponseBody
   public java.util.Map<String, Object> rescanRuntimes() {
     java.util.Map<String, Object> result = new java.util.HashMap<>();
     try {
+      runtimeService.clearSystemVersionCache();
       windowsScanner.refreshCache();
       result.put("success", true);
       result.put("java", windowsScanner.getJavaInstallations());

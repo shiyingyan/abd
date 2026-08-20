@@ -7,6 +7,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +21,8 @@ public class LanguageRuntimeService {
   private static final Logger log = LoggerFactory.getLogger(LanguageRuntimeService.class);
 
   @Autowired private WindowsRuntimeScanner windowsScanner;
+
+  private final Map<LanguageType, String> systemVersionCache = new ConcurrentHashMap<>();
 
   /** Cached result of shell detection: "zsh" or "bash". */
   private static volatile String detectedShell;
@@ -111,7 +116,7 @@ public class LanguageRuntimeService {
       home + "/.nvm/nvm.sh",
       home + "/.sdkman/bin/sdkman-init.sh",
       home + "/.gvm/scripts/gvm",
-      home + "/.gvm/scripts/gvm-default",
+      home + "/.gvm/scripts/gvm_default",
     };
     for (String script : initScripts) {
       sb.append(" && { [ -f \"")
@@ -178,46 +183,100 @@ public class LanguageRuntimeService {
     }
   }
 
-  /** Check if a language version is installed. */
-  public boolean isVersionInstalled(LanguageType language, String version) {
-    if (language == null || version == null) return false;
+  /**
+   * Detect the system-installed runtime version for Java or Go by running the version command
+   * directly (e.g. java -version, go version). Returns null if not found or not applicable.
+   */
+  private String detectSystemVersion(LanguageType language) {
+    if (isWindows()) return null;
+    if (language != LanguageType.JAVA && language != LanguageType.GO) return null;
+
+    String cached = systemVersionCache.get(language);
+    if (cached != null) return cached;
+
     try {
-      List<String> installed = listInstalledVersions(language);
-      return installed.stream().anyMatch(v -> v.contains(version));
+      String cmd = (language == LanguageType.JAVA) ? "java -version" : "go version";
+      ProcessBuilder pb = createShellProcess(cmd);
+      pb.redirectErrorStream(true);
+      Process process = pb.start();
+
+      String version = null;
+      try (BufferedReader reader =
+          new BufferedReader(new InputStreamReader(process.getInputStream(), "UTF-8"))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+          if (language == LanguageType.JAVA) {
+            Matcher m = Pattern.compile("(\\d+\\.\\d+(?:\\.\\d+)?)").matcher(line);
+            if (m.find()) {
+              version = m.group(1);
+              break;
+            }
+          } else {
+            Matcher m = Pattern.compile("go(\\d+\\.\\d+(?:\\.\\d+)?)").matcher(line);
+            if (m.find()) {
+              version = m.group(1);
+              break;
+            }
+          }
+        }
+      }
+      process.waitFor();
+
+      if (version != null) {
+        systemVersionCache.put(language, version);
+        log.info("Detected system {} version: {}", language, version);
+      }
+      return version;
     } catch (Exception e) {
-      log.warn("Failed to check installed versions for {} {}", language, version, e);
-      return false;
+      log.debug("Failed to detect system {} version: {}", language, e.getMessage());
+      return null;
     }
   }
 
-  /** List installed versions for a language. Uses OS-appropriate shell and commands. */
-  public List<String> listInstalledVersions(LanguageType language) {
-    if (isWindows() && (language == LanguageType.JAVA || language == LanguageType.GO)) {
-      Map<String, String> installations =
-          (language == LanguageType.JAVA)
-              ? windowsScanner.getJavaInstallations()
-              : windowsScanner.getGoInstallations();
-      return new ArrayList<>(installations.keySet());
-    }
+  /** Get the cached system version for a language, or detect it if not yet cached. */
+  public String getSystemVersion(LanguageType language) {
+    String cached = systemVersionCache.get(language);
+    if (cached != null) return cached;
+    return detectSystemVersion(language);
+  }
 
+  /** Clear the system version cache, forcing re-detection on next access. */
+  public void clearSystemVersionCache() {
+    systemVersionCache.clear();
+  }
+
+  /** List versions via the language's version manager tool (sdkman, gvm, nvm, uv). */
+  private List<String> listToolManagedVersions(LanguageType language) {
     List<String> versions = new ArrayList<>();
     try {
       String command = language.getListCommand();
-      log.debug("Listing {} versions with command: {}", language, command);
+      log.debug("Listing {} tool-managed versions with command: {}", language, command);
 
       ProcessBuilder pb = createShellProcess(command);
       pb.redirectErrorStream(true);
       Process process = pb.start();
 
-      // Regex to extract version numbers like 1.2.3, v18.16.0, 11.0.19+7, etc.
-      java.util.regex.Pattern versionPattern =
-          java.util.regex.Pattern.compile("v?(\\d+\\.\\d+(?:\\.\\d+)?(?:[+\\-]\\w+)?)");
+      Pattern versionPattern = Pattern.compile("v?(\\d+\\.\\d+(?:\\.\\d+)?(?:[+\\-]\\w+)?)");
 
       try (BufferedReader reader =
           new BufferedReader(new InputStreamReader(process.getInputStream(), "UTF-8"))) {
         String line;
         while ((line = reader.readLine()) != null) {
-          java.util.regex.Matcher matcher = versionPattern.matcher(line);
+          // For SDKMAN (Java) and GVM (Go), only match lines marked as installed
+          if (language == LanguageType.JAVA) {
+            // SDKMAN output: installed versions have "installed" in Status column or ">>>" in Use
+            // column
+            if (!line.contains("installed") && !line.contains(">>>")) {
+              continue;
+            }
+          } else if (language == LanguageType.GO) {
+            // GVM output: installed versions have "installed" suffix
+            if (!line.contains("installed")) {
+              continue;
+            }
+          }
+
+          Matcher matcher = versionPattern.matcher(line);
           if (matcher.find()) {
             String version = matcher.group();
             if (!versions.contains(version)) {
@@ -231,8 +290,47 @@ public class LanguageRuntimeService {
         log.warn("Command '{}' exited with code {} for {}", command, exitCode, language);
       }
     } catch (Exception e) {
-      log.warn("Failed to list versions for {}: {}", language, e.getMessage());
+      log.warn("Failed to list tool-managed versions for {}: {}", language, e.getMessage());
     }
+    return versions;
+  }
+
+  /** Check if a language version is installed. */
+  public boolean isVersionInstalled(LanguageType language, String version) {
+    if (language == null || version == null) return false;
+    try {
+      List<String> installed = listInstalledVersions(language);
+      return installed.stream().anyMatch(v -> v.contains(version));
+    } catch (Exception e) {
+      log.warn("Failed to check installed versions for {} {}", language, version, e);
+      return false;
+    }
+  }
+
+  /**
+   * List installed versions for a language. On Mac/Linux for Java/Go, first checks the system
+   * runtime, then checks version manager (sdkman/gvm) managed runtimes.
+   */
+  public List<String> listInstalledVersions(LanguageType language) {
+    if (isWindows() && (language == LanguageType.JAVA || language == LanguageType.GO)) {
+      Map<String, String> installations =
+          (language == LanguageType.JAVA)
+              ? windowsScanner.getJavaInstallations()
+              : windowsScanner.getGoInstallations();
+      return new ArrayList<>(installations.keySet());
+    }
+
+    List<String> versions = new ArrayList<>();
+
+    if (!isWindows() && (language == LanguageType.JAVA || language == LanguageType.GO)) {
+      String systemVersion = detectSystemVersion(language);
+      if (systemVersion != null) {
+        versions.add(systemVersion);
+      }
+    }
+
+    versions.addAll(listToolManagedVersions(language));
+
     return versions;
   }
 
@@ -248,8 +346,33 @@ public class LanguageRuntimeService {
           : windowsScanner.getGoInstallations();
     }
     Map<String, String> result = new LinkedHashMap<>();
-    for (String v : listInstalledVersions(language)) {
-      result.put(v, null);
+
+    if (!isWindows() && (language == LanguageType.JAVA || language == LanguageType.GO)) {
+      String systemVersion = getSystemVersion(language);
+      if (systemVersion != null) {
+        String binary = (language == LanguageType.JAVA) ? "java" : "go";
+        try {
+          ProcessBuilder pb = createShellProcess("which " + binary);
+          pb.redirectErrorStream(true);
+          Process process = pb.start();
+          try (BufferedReader reader =
+              new BufferedReader(new InputStreamReader(process.getInputStream(), "UTF-8"))) {
+            String path = reader.readLine();
+            if (path != null && !path.isEmpty()) {
+              result.put(systemVersion, path.trim());
+            }
+          }
+          process.waitFor();
+        } catch (Exception e) {
+          result.put(systemVersion, null);
+        }
+      }
+    }
+
+    for (String v : listToolManagedVersions(language)) {
+      if (!result.containsKey(v)) {
+        result.put(v, null);
+      }
     }
     return result;
   }
@@ -262,7 +385,8 @@ public class LanguageRuntimeService {
 
   /**
    * Generate the full build command with version switching prepended. Uses OS-appropriate syntax
-   * (export vs set for PATH).
+   * (export vs set for PATH). Skips sdkman/gvm switch command when the version matches the system
+   * runtime.
    */
   public String buildFullCommand(
       LanguageType language, String version, String buildCommand, String customInstallDir) {
@@ -289,7 +413,10 @@ public class LanguageRuntimeService {
       }
 
       if (!isWindows()) {
-        sb.append(language.getUseCommand(version)).append(" && ");
+        String systemVersion = getSystemVersion(language);
+        if (!version.equals(systemVersion)) {
+          sb.append(language.getUseCommand(version)).append(" && ");
+        }
       }
     }
     sb.append(buildCommand);

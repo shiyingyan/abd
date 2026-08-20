@@ -104,8 +104,9 @@ public class BuildService {
 
         // Step 1: Git clone/pull (use configured projectDir, or per-user temp directory)
         String userGitDir;
-        if (config.getProjectDir() != null && !config.getProjectDir().trim().isEmpty()) {
-          userGitDir = config.getProjectDir().trim();
+        String expandedProjectDir = expandPath(config.getProjectDir());
+        if (expandedProjectDir != null && !expandedProjectDir.isEmpty()) {
+          userGitDir = expandedProjectDir;
         } else {
           String tempBase = System.getProperty("java.io.tmpdir");
           userGitDir =
@@ -115,6 +116,15 @@ public class BuildService {
         }
         repoDir = new File(userGitDir);
         boolean repoExists = repoDir.exists() && new File(repoDir, ".git").exists();
+
+        // Always detect and log the current branch
+        if (repoExists) {
+          String detectedBranch = gitService.getCurrentBranch(repoDir);
+          if (detectedBranch != null) {
+            logLine(task, logWriter, "=== 当前代码分支: " + detectedBranch + " ===");
+          }
+        }
+
         if (task.isSkipGitPull()) {
           logLine(task, logWriter, "=== 跳过 Git pull（使用本地已有代码） ===");
           logLine(task, logWriter, "Git directory: " + userGitDir);
@@ -1006,17 +1016,36 @@ public class BuildService {
     return result;
   }
 
+  /** Expand tilde (~) in path to user's home directory. */
+  private static String expandPath(String path) {
+    if (path == null || path.isEmpty()) {
+      return path;
+    }
+    String trimmed = path.trim();
+    if (trimmed.startsWith("~")) {
+      String home = System.getProperty("user.home");
+      if (home != null) {
+        if (trimmed.equals("~")) {
+          return home;
+        } else if (trimmed.startsWith("~/")) {
+          return home + trimmed.substring(1);
+        }
+      }
+    }
+    return trimmed;
+  }
+
   /** Check whether a project's local repository has uncommitted changes. */
   public boolean hasUncommittedChanges(Long configId) {
     ProjectConfig config = configService.getSnapshot(configId);
     if (config == null) {
       return false;
     }
-    String projectDir = config.getProjectDir();
-    if (projectDir == null || projectDir.trim().isEmpty()) {
+    String projectDir = expandPath(config.getProjectDir());
+    if (projectDir == null || projectDir.isEmpty()) {
       return false;
     }
-    File repoDir = new File(projectDir.trim());
+    File repoDir = new File(projectDir);
     return gitService.hasUncommittedChanges(repoDir);
   }
 
@@ -1026,11 +1055,11 @@ public class BuildService {
     if (config == null) {
       return null;
     }
-    String projectDir = config.getProjectDir();
-    if (projectDir == null || projectDir.trim().isEmpty()) {
+    String projectDir = expandPath(config.getProjectDir());
+    if (projectDir == null || projectDir.isEmpty()) {
       return null;
     }
-    File repoDir = new File(projectDir.trim());
+    File repoDir = new File(projectDir);
     return gitService.getCurrentBranch(repoDir);
   }
 
@@ -1041,9 +1070,9 @@ public class BuildService {
       return java.util.Collections.emptyList();
     }
     try {
-      String projectDir = config.getProjectDir();
-      if (projectDir != null && !projectDir.trim().isEmpty()) {
-        return gitService.listBranches(config, projectDir.trim());
+      String projectDir = expandPath(config.getProjectDir());
+      if (projectDir != null && !projectDir.isEmpty()) {
+        return gitService.listBranches(config, projectDir);
       }
       // No local project dir — use ls-remote to list branches directly from the remote URL
       return gitService.listBranches(config, null);

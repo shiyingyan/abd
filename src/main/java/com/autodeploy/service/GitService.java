@@ -214,13 +214,24 @@ public class GitService {
    */
   public String getCurrentBranch(File repoDir) {
     if (repoDir == null || !repoDir.isDirectory() || !new File(repoDir, ".git").isDirectory()) {
+      if (repoDir != null) {
+        log.info(
+            "getCurrentBranch: repository not found at {} (exists={}, isDir={}, hasGit={})",
+            repoDir.getAbsolutePath(),
+            repoDir.exists(),
+            repoDir.isDirectory(),
+            repoDir.isDirectory() ? new File(repoDir, ".git").isDirectory() : false);
+      }
       return null;
     }
     try (Git git = Git.open(repoDir)) {
-      return git.getRepository().getBranch();
+      configureGitFromSystemSettings(git.getRepository());
+      String branch = git.getRepository().getBranch();
+      log.info("getCurrentBranch: detected branch '{}' for {}", branch, repoDir.getAbsolutePath());
+      return branch;
     } catch (Exception e) {
       log.warn(
-          "Failed to get current branch from {}: {}", repoDir.getAbsolutePath(), e.getMessage());
+          "Failed to get current branch from {}: {}", repoDir.getAbsolutePath(), e.getMessage(), e);
       return null;
     }
   }

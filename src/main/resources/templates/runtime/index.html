@@ -54,23 +54,48 @@ var isWindows = navigator.userAgent.indexOf('Windows') !== -1;
 var noAutoInstallLangs = ['JAVA', 'GO'];
 
 function loadVersions(lang) {
-    $.get('/api/runtime/versions', {language: lang}, function(versions) {
-        var container = $('#' + lang + '-versions');
-        var card = $('#' + lang + '-card');
-        if (!versions || versions.length === 0) {
-            container.html('<div class="alert alert-warning py-1 px-2 mb-0 small">' +
-                '<i class="bi bi-exclamation-triangle me-1"></i>' +
-                '未安装任何版本。请先在系统中安装。</div>');
-            card.addClass('border-warning');
-        } else {
-            var badges = versions.map(function(v) {
-                return '<span class="badge bg-success me-1 mb-1">' + v.trim() + '</span>';
-            }).join('');
-            container.html('<div class="small text-muted mb-1">已安装版本：</div>' + badges);
-            card.removeClass('border-warning');
-        }
+    $.get('/api/runtime/system-version', {language: lang}, function(sysData) {
+        var sysVersion = sysData.version;
+        $.get('/api/runtime/versions', {language: lang}, function(versions) {
+            var container = $('#' + lang + '-versions');
+            var card = $('#' + lang + '-card');
+            if (!versions || versions.length === 0) {
+                container.html('<div class="alert alert-warning py-1 px-2 mb-0 small">' +
+                    '<i class="bi bi-exclamation-triangle me-1"></i>' +
+                    '未安装任何版本。请先在系统中安装。</div>');
+                card.addClass('border-warning');
+            } else {
+                var badges = versions.map(function(v) {
+                    var trimmed = v.trim();
+                    if (sysVersion && trimmed === sysVersion) {
+                        return '<span class="badge bg-info me-1 mb-1" title="系统安装">' +
+                            trimmed + ' (系统)</span>';
+                    }
+                    return '<span class="badge bg-success me-1 mb-1">' + trimmed + '</span>';
+                }).join('');
+                container.html('<div class="small text-muted mb-1">已安装版本：</div>' + badges);
+                card.removeClass('border-warning');
+            }
+        }).fail(function() {
+            $('#' + lang + '-versions').html('<span class="text-danger small">检测失败</span>');
+        });
     }).fail(function() {
-        $('#' + lang + '-versions').html('<span class="text-danger small">检测失败</span>');
+        $.get('/api/runtime/versions', {language: lang}, function(versions) {
+            var container = $('#' + lang + '-versions');
+            var card = $('#' + lang + '-card');
+            if (!versions || versions.length === 0) {
+                container.html('<div class="alert alert-warning py-1 px-2 mb-0 small">' +
+                    '<i class="bi bi-exclamation-triangle me-1"></i>' +
+                    '未安装任何版本。请先在系统中安装。</div>');
+                card.addClass('border-warning');
+            } else {
+                var badges = versions.map(function(v) {
+                    return '<span class="badge bg-success me-1 mb-1">' + v.trim() + '</span>';
+                }).join('');
+                container.html('<div class="small text-muted mb-1">已安装版本：</div>' + badges);
+                card.removeClass('border-warning');
+            }
+        });
     });
 }
 
