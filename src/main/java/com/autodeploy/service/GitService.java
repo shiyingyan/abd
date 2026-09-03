@@ -118,7 +118,24 @@ public class GitService {
         String currentBranch = git.getRepository().getBranch();
         if (!branch.equals(currentBranch)) {
           log.info("Branch changed from {} to {}, switching", currentBranch, branch);
-          git.checkout().setName(branch).setCreateBranch(false).call();
+          try {
+            git.checkout().setName(branch).setCreateBranch(false).call();
+          } catch (Exception checkoutEx) {
+            log.info("Local branch '{}' not found in cloneOrPull, creating from remote", branch);
+            git.fetch().call();
+            String remoteRef = "refs/remotes/origin/" + branch;
+            org.eclipse.jgit.lib.Ref remoteBranch = git.getRepository().exactRef(remoteRef);
+            if (remoteBranch != null) {
+              git.checkout()
+                  .setName(branch)
+                  .setCreateBranch(true)
+                  .setUpstreamMode(org.eclipse.jgit.api.CreateBranchCommand.SetupUpstreamMode.TRACK)
+                  .setStartPoint("origin/" + branch)
+                  .call();
+            } else {
+              throw new IllegalStateException("分支 " + branch + " 在本地和远程均未找到，请先确认远程仓库存在该分支");
+            }
+          }
         }
         log.info("Git pull completed for {}", config.getProjectName());
       }
@@ -327,8 +344,41 @@ public class GitService {
     try (Git git = Git.open(repoDir)) {
       configureGitFromSystemSettings(git.getRepository());
       log.info("Checking out branch {} in {}", branch, repoDir.getAbsolutePath());
-      git.checkout().setName(branch).setCreateBranch(false).call();
-      return true;
+      try {
+        git.checkout().setName(branch).setCreateBranch(false).call();
+        return true;
+      } catch (Exception checkoutEx) {
+        // Branch may not exist locally — try to create a tracking branch from origin/<branch>
+        log.info(
+            "Local branch '{}' not found, attempting to create from remote tracking branch",
+            branch);
+        try {
+          git.fetch().call();
+          String remoteRef = "refs/remotes/origin/" + branch;
+          org.eclipse.jgit.lib.Ref remoteBranch = git.getRepository().exactRef(remoteRef);
+          if (remoteBranch != null) {
+            git.checkout()
+                .setName(branch)
+                .setCreateBranch(true)
+                .setUpstreamMode(org.eclipse.jgit.api.CreateBranchCommand.SetupUpstreamMode.TRACK)
+                .setStartPoint("origin/" + branch)
+                .call();
+            log.info("Created local tracking branch '{}' from origin/{}", branch, branch);
+            return true;
+          } else {
+            log.warn(
+                "Remote branch 'origin/{}' not found in {}", branch, repoDir.getAbsolutePath());
+            return false;
+          }
+        } catch (Exception fetchEx) {
+          log.warn(
+              "Failed to create tracking branch '{}' from remote in {}: {}",
+              branch,
+              repoDir.getAbsolutePath(),
+              fetchEx.getMessage());
+          return false;
+        }
+      }
     } catch (Exception e) {
       log.warn(
           "Failed to checkout branch {} in {}: {}",
@@ -603,7 +653,6 @@ public class GitService {
 
       if (externalSettings.isEmpty()) {
         log.warn("No external git config found — JGit may report false positives on Windows");
-        return;
       }
 
       // Apply settings to repo config (only if not already set in repo's own config)
@@ -615,6 +664,24 @@ public class GitService {
         if (existing == null) {
           repoConfig.setString("core", null, key, value);
           log.info("Applied core.{}={} from external git config", key, value);
+          applied++;
+        }
+      }
+
+      // macOS fix: command-line git sets core.fileMode=false by default because APFS
+      // does not reliably track Unix permission bits. JGit does not replicate this
+      // behaviour, so repos cloned by JGit on macOS may have core.fileMode=true,
+      // causing chmod-only changes (e.g. 0755→0644) to appear as "uncommitted changes".
+      // Force core.fileMode=false on macOS when no explicit fileMode was found in any
+      // external config, and also override a repo-level true value.
+      boolean isMacOs =
+          System.getProperty("os.name", "").toLowerCase().contains("mac")
+              || System.getProperty("os.name", "").toLowerCase().contains("darwin");
+      if (isMacOs && !externalSettings.containsKey("filemode")) {
+        String currentFileMode = repoConfig.getString("core", null, "filemode");
+        if (currentFileMode == null || !"false".equalsIgnoreCase(currentFileMode)) {
+          repoConfig.setString("core", null, "filemode", "false");
+          log.info("macOS detected — forced core.fileMode=false to prevent false dirty detection");
           applied++;
         }
       }
