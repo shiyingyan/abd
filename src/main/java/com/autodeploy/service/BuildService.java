@@ -1017,7 +1017,7 @@ public class BuildService {
   }
 
   /** Expand tilde (~) in path to user's home directory. */
-  private static String expandPath(String path) {
+  static String expandPath(String path) {
     if (path == null || path.isEmpty()) {
       return path;
     }

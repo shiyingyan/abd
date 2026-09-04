@@ -229,21 +229,56 @@ public class BuildQueueService {
         config.getProjectDir() != null && !config.getProjectDir().trim().isEmpty();
 
     for (BuildQueueTask task : executing) {
-      if (!task.getConfigId().equals(config.getId())) continue; // different project, skip
+      if (task.getConfigId().equals(config.getId())) {
+        // Same project
+        if (hasServerOverlap(task.getDeployServers(), deployServersKey)) {
+          return "queue"; // servers overlap → queue (Rules 2.2②, 2.3③)
+        }
 
-      // Same project
-      if (hasServerOverlap(task.getDeployServers(), deployServersKey)) {
-        return "queue"; // servers overlap → queue (Rules 2.2②, 2.3③)
+        // Servers have no overlap
+        if (hasProjectDir) {
+          return "worktree"; // Rule 2.2①
+        } else {
+          if (username.equals(task.getUsername())) {
+            return "worktree"; // Rule 2.3②: same user → worktree
+          }
+          // Rule 2.3①: different user → continue checking other tasks
+        }
+        continue;
       }
 
-      // Servers have no overlap
+      // Different configId but same projectDir → conflict only when branch switching is needed
       if (hasProjectDir) {
-        return "worktree"; // Rule 2.2①
-      } else {
-        if (username.equals(task.getUsername())) {
-          return "worktree"; // Rule 2.3②: same user → worktree
+        try {
+          ProjectConfig execConfig = configService.getSnapshot(task.getConfigId());
+          if (execConfig != null) {
+            String execDir = execConfig.getProjectDir();
+            if (execDir != null && !execDir.trim().isEmpty()) {
+              String newDir = config.getProjectDir().trim();
+              String execDirResolved = BuildService.expandPath(execDir.trim());
+              String newDirResolved = BuildService.expandPath(newDir);
+              if (execDirResolved.equals(newDirResolved)) {
+                String targetBranch = config.getGitBranch();
+                if (targetBranch != null && !targetBranch.trim().isEmpty()) {
+                  String currentBranch =
+                      gitService.getCurrentBranch(new java.io.File(newDirResolved));
+                  if (targetBranch.equals(currentBranch)) {
+                    continue;
+                  }
+                }
+                if (gitService.hasUncommittedChanges(new java.io.File(newDirResolved))) {
+                  return "queue";
+                }
+                return "worktree";
+              }
+            }
+          }
+        } catch (Exception e) {
+          log.warn(
+              "Failed to check projectDir conflict for configId={}: {}",
+              task.getConfigId(),
+              e.getMessage());
         }
-        // Rule 2.3①: different user → continue checking other tasks
       }
     }
     return "direct"; // No conflicts found (Rules 1, 2.1, 2.3①)
@@ -614,11 +649,49 @@ public class BuildQueueService {
 
       // Check if this candidate conflicts with any currently executing task
       boolean conflicts = false;
+      ProjectConfig candidateConfig = configService.getSnapshot(candidate.getConfigId());
+      String candidateDir =
+          candidateConfig != null && candidateConfig.getProjectDir() != null
+              ? BuildService.expandPath(candidateConfig.getProjectDir().trim())
+              : null;
+
       for (BuildQueueTask exec : executingTasks) {
-        if (!exec.getConfigId().equals(candidate.getConfigId())) continue;
-        if (hasServerOverlap(exec.getDeployServers(), candidate.getDeployServers())) {
-          conflicts = true;
-          break;
+        if (exec.getConfigId().equals(candidate.getConfigId())) {
+          if (hasServerOverlap(exec.getDeployServers(), candidate.getDeployServers())) {
+            conflicts = true;
+            break;
+          }
+          continue;
+        }
+
+        // Different configId but same projectDir → conflict only when branch switching is needed
+        if (candidateDir != null) {
+          try {
+            ProjectConfig execConfig = configService.getSnapshot(exec.getConfigId());
+            if (execConfig != null) {
+              String execDir = execConfig.getProjectDir();
+              if (execDir != null && !execDir.trim().isEmpty()) {
+                String execDirResolved = BuildService.expandPath(execDir.trim());
+                if (execDirResolved.equals(candidateDir)) {
+                  String targetBranch = candidate.getTargetBranch();
+                  if (targetBranch != null && !targetBranch.trim().isEmpty()) {
+                    String currentBranch =
+                        gitService.getCurrentBranch(new java.io.File(candidateDir));
+                    if (targetBranch.equals(currentBranch)) {
+                      continue;
+                    }
+                  }
+                  conflicts = true;
+                  break;
+                }
+              }
+            }
+          } catch (Exception e) {
+            log.warn(
+                "Failed to check projectDir conflict for configId={}: {}",
+                exec.getConfigId(),
+                e.getMessage());
+          }
         }
       }
 
