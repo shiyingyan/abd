@@ -44,13 +44,9 @@ public class GitService {
 
     if (hasGitRepo) {
       log.info("Existing repository found at {}, attempting git pull", repoDir.getAbsolutePath());
-      try (Git git = Git.open(repoDir)) {
-        // Configure JGit to respect system git configuration (core.autocrlf, core.fileMode, etc.)
-        // This ensures JGit detects changes the same way as command-line git.
-        configureGitFromSystemSettings(git.getRepository());
-
+      try (RepoHandle handle = RepoHandle.openRepo(repoDir)) {
         try {
-          PullCommand pull = git.pull();
+          PullCommand pull = handle.git().pull();
           if (creds != null) {
             pull.setCredentialsProvider(creds);
           }
@@ -62,7 +58,7 @@ public class GitService {
           // and the repo reset to a clean HEAD (no code is lost).
           boolean mergeInProgress = false;
           try {
-            RepositoryState state = git.getRepository().getRepositoryState();
+            RepositoryState state = handle.repository().getRepositoryState();
             mergeInProgress =
                 state == RepositoryState.MERGING || state == RepositoryState.MERGING_RESOLVED;
           } catch (Exception ignore) {
@@ -80,13 +76,13 @@ public class GitService {
                 config.getProjectName(),
                 msg);
             try {
-              git.reset().setMode(ResetCommand.ResetType.HARD).setRef("HEAD").call();
+              handle.git().reset().setMode(ResetCommand.ResetType.HARD).setRef("HEAD").call();
             } catch (Exception ignore) {
               // ignore reset errors
             }
             throw new IllegalStateException(
                 "Git pull 发生合并冲突，已自动将本地分支重置到最近一次提交。"
-                    + "请手动合并目标分支 "
+                    + "请先手动合并目标分支 "
                     + branch
                     + " 并解决冲突后再构建。原始错误: "
                     + msg,
@@ -115,18 +111,20 @@ public class GitService {
           throw e;
         }
 
-        String currentBranch = git.getRepository().getBranch();
+        String currentBranch = handle.repository().getBranch();
         if (!branch.equals(currentBranch)) {
           log.info("Branch changed from {} to {}, switching", currentBranch, branch);
           try {
-            git.checkout().setName(branch).setCreateBranch(false).call();
+            handle.git().checkout().setName(branch).setCreateBranch(false).call();
           } catch (Exception checkoutEx) {
             log.info("Local branch '{}' not found in cloneOrPull, creating from remote", branch);
-            git.fetch().call();
+            handle.git().fetch().call();
             String remoteRef = "refs/remotes/origin/" + branch;
-            org.eclipse.jgit.lib.Ref remoteBranch = git.getRepository().exactRef(remoteRef);
+            org.eclipse.jgit.lib.Ref remoteBranch = handle.repository().exactRef(remoteRef);
             if (remoteBranch != null) {
-              git.checkout()
+              handle
+                  .git()
+                  .checkout()
                   .setName(branch)
                   .setCreateBranch(true)
                   .setUpstreamMode(org.eclipse.jgit.api.CreateBranchCommand.SetupUpstreamMode.TRACK)
@@ -170,34 +168,19 @@ public class GitService {
   /**
    * Return the HEAD commit hash of a local git repository. Returns null if the directory is not a
    * git repository, has no commits, or any error occurs. If the working tree has uncommitted local
-   * changes (staged, unstaged, or untracked files), the hash is suffixed with {@code -DIRTY} so
-   * that build caches treat "edited but not committed" as a real code change.
+   * changes, the hash is suffixed with {@code -DIRTY} so that build caches treat "edited but not
+   * committed" as a real code change.
    */
   public String getHeadHash(File repoDir) {
-    if (repoDir == null || !repoDir.isDirectory() || !new File(repoDir, ".git").isDirectory()) {
-      return null;
-    }
-    try (Git git = Git.open(repoDir)) {
-      // Configure JGit to respect system git configuration
-      configureGitFromSystemSettings(git.getRepository());
-
-      org.eclipse.jgit.revwalk.RevCommit head = git.log().setMaxCount(1).call().iterator().next();
+    try (RepoHandle handle = RepoHandle.openRepo(repoDir)) {
+      if (handle == null) {
+        return null;
+      }
+      org.eclipse.jgit.revwalk.RevCommit head =
+          handle.git().log().setMaxCount(1).call().iterator().next();
       String hash = head.getName();
-
-      // Detect working-tree changes that haven't been committed yet.
-      // Note: getUntracked() is intentionally excluded — build artifacts from previous
-      // builds (target/, dist/, etc.) persist in the repo directory and would cause
-      // false positives.
-      Status status = git.status().call();
-      boolean dirty =
-          status.hasUncommittedChanges()
-              || !status.getChanged().isEmpty()
-              || !status.getAdded().isEmpty()
-              || !status.getRemoved().isEmpty()
-              || !status.getMissing().isEmpty()
-              || !status.getModified().isEmpty()
-              || !status.getConflicting().isEmpty();
-      return dirty ? hash + "-DIRTY" : hash;
+      Status status = handle.status();
+      return handle.hasActualUncommittedChanges(status) ? hash + "-DIRTY" : hash;
     } catch (Exception e) {
       log.warn("Failed to read HEAD hash from {}: {}", repoDir.getAbsolutePath(), e.getMessage());
       return null;
@@ -209,13 +192,32 @@ public class GitService {
    * directory doesn't exist or isn't a git repository.
    */
   public boolean hasUncommittedChanges(File repoDir) {
-    if (repoDir == null || !repoDir.isDirectory() || !new File(repoDir, ".git").isDirectory()) {
-      return false;
-    }
-    try (Git git = Git.open(repoDir)) {
-      configureGitFromSystemSettings(git.getRepository());
-      Status status = git.status().call();
-      return status.hasUncommittedChanges();
+    try (RepoHandle handle = RepoHandle.openRepo(repoDir)) {
+      if (handle == null) {
+        return false;
+      }
+      Status status = handle.status();
+      boolean hasChanges = handle.hasActualUncommittedChanges(status);
+
+      if (hasChanges || status.hasUncommittedChanges() || !status.getMissing().isEmpty()) {
+        log.info(
+            "hasUncommittedChanges for {}: jgit.hasUncommittedChanges={}, changed={}, added={}, "
+                + "removed={}, missing={}, modified={}, conflicting={}, untracked={}, "
+                + "untrackedFolders={}, actual={}",
+            repoDir.getAbsolutePath(),
+            status.hasUncommittedChanges(),
+            status.getChanged(),
+            status.getAdded(),
+            status.getRemoved(),
+            status.getMissing(),
+            status.getModified(),
+            status.getConflicting(),
+            status.getUntracked(),
+            status.getUntrackedFolders(),
+            hasChanges);
+      }
+
+      return hasChanges;
     } catch (Exception e) {
       log.warn(
           "Failed to check uncommitted changes in {}: {}",
@@ -230,20 +232,19 @@ public class GitService {
    * repository or any error occurs.
    */
   public String getCurrentBranch(File repoDir) {
-    if (repoDir == null || !repoDir.isDirectory() || !new File(repoDir, ".git").isDirectory()) {
-      if (repoDir != null) {
-        log.info(
-            "getCurrentBranch: repository not found at {} (exists={}, isDir={}, hasGit={})",
-            repoDir.getAbsolutePath(),
-            repoDir.exists(),
-            repoDir.isDirectory(),
-            repoDir.isDirectory() ? new File(repoDir, ".git").isDirectory() : false);
+    try (RepoHandle handle = RepoHandle.openRepo(repoDir)) {
+      if (handle == null) {
+        if (repoDir != null) {
+          log.info(
+              "getCurrentBranch: repository not found at {} (exists={}, isDir={}, hasGit={})",
+              repoDir.getAbsolutePath(),
+              repoDir.exists(),
+              repoDir.isDirectory(),
+              repoDir.isDirectory() ? new File(repoDir, ".git").isDirectory() : false);
+        }
+        return null;
       }
-      return null;
-    }
-    try (Git git = Git.open(repoDir)) {
-      configureGitFromSystemSettings(git.getRepository());
-      String branch = git.getRepository().getBranch();
+      String branch = handle.repository().getBranch();
       log.info("getCurrentBranch: detected branch '{}' for {}", branch, repoDir.getAbsolutePath());
       return branch;
     } catch (Exception e) {
@@ -281,12 +282,14 @@ public class GitService {
       return branches;
     }
 
-    try (Git git = Git.open(repoDir)) {
-      configureGitFromSystemSettings(git.getRepository());
+    try (RepoHandle handle = RepoHandle.openRepo(repoDir)) {
+      if (handle == null) {
+        return branches;
+      }
 
       // Fetch latest remote refs
       UsernamePasswordCredentialsProvider creds = resolveCredentials(config);
-      org.eclipse.jgit.api.FetchCommand fetchCmd = git.fetch();
+      org.eclipse.jgit.api.FetchCommand fetchCmd = handle.git().fetch();
       if (creds != null) {
         fetchCmd.setCredentialsProvider(creds);
       }
@@ -294,7 +297,9 @@ public class GitService {
 
       // List remote branches
       java.util.List<org.eclipse.jgit.lib.Ref> refs =
-          git.branchList()
+          handle
+              .git()
+              .branchList()
               .setListMode(org.eclipse.jgit.api.ListBranchCommand.ListMode.REMOTE)
               .call();
       for (org.eclipse.jgit.lib.Ref ref : refs) {
@@ -338,14 +343,13 @@ public class GitService {
    * false otherwise.
    */
   public boolean checkoutBranch(File repoDir, String branch) {
-    if (repoDir == null || !repoDir.isDirectory() || !new File(repoDir, ".git").isDirectory()) {
-      return false;
-    }
-    try (Git git = Git.open(repoDir)) {
-      configureGitFromSystemSettings(git.getRepository());
+    try (RepoHandle handle = RepoHandle.openRepo(repoDir)) {
+      if (handle == null) {
+        return false;
+      }
       log.info("Checking out branch {} in {}", branch, repoDir.getAbsolutePath());
       try {
-        git.checkout().setName(branch).setCreateBranch(false).call();
+        handle.git().checkout().setName(branch).setCreateBranch(false).call();
         return true;
       } catch (Exception checkoutEx) {
         // Branch may not exist locally — try to create a tracking branch from origin/<branch>
@@ -353,11 +357,13 @@ public class GitService {
             "Local branch '{}' not found, attempting to create from remote tracking branch",
             branch);
         try {
-          git.fetch().call();
+          handle.git().fetch().call();
           String remoteRef = "refs/remotes/origin/" + branch;
-          org.eclipse.jgit.lib.Ref remoteBranch = git.getRepository().exactRef(remoteRef);
+          org.eclipse.jgit.lib.Ref remoteBranch = handle.repository().exactRef(remoteRef);
           if (remoteBranch != null) {
-            git.checkout()
+            handle
+                .git()
+                .checkout()
                 .setName(branch)
                 .setCreateBranch(true)
                 .setUpstreamMode(org.eclipse.jgit.api.CreateBranchCommand.SetupUpstreamMode.TRACK)
@@ -407,10 +413,12 @@ public class GitService {
     }
 
     // Fetch latest in main repo first
-    try (Git git = Git.open(repoDir)) {
-      configureGitFromSystemSettings(git.getRepository());
+    try (RepoHandle handle = RepoHandle.openRepo(repoDir)) {
+      if (handle == null) {
+        throw new IllegalStateException("项目 Git 仓库无法打开");
+      }
       UsernamePasswordCredentialsProvider creds = resolveCredentials(config);
-      org.eclipse.jgit.api.FetchCommand fetchCmd = git.fetch();
+      org.eclipse.jgit.api.FetchCommand fetchCmd = handle.git().fetch();
       if (creds != null) {
         fetchCmd.setCredentialsProvider(creds);
       }
@@ -556,13 +564,12 @@ public class GitService {
   private void deleteDirectory(File dir) {
     if (!dir.exists()) return;
     File[] files = dir.listFiles();
-    if (files != null) {
-      for (File f : files) {
-        if (f.isDirectory()) {
-          deleteDirectory(f);
-        } else {
-          f.delete();
-        }
+    if (files == null) return;
+    for (File f : files) {
+      if (f.isDirectory()) {
+        deleteDirectory(f);
+      } else {
+        f.delete();
       }
     }
     dir.delete();
@@ -583,157 +590,6 @@ public class GitService {
       // For SSH, token is typically the passphrase for the SSH key
       // (empty string if no passphrase)
       return new UsernamePasswordCredentialsProvider(token, "");
-    }
-  }
-
-  /**
-   * Configure JGit repository to respect system git configuration. This ensures JGit detects
-   * changes the same way as command-line git, especially for settings like core.autocrlf (line
-   * ending normalization) and core.fileMode (file permission tracking).
-   *
-   * <p>Reads config in git's standard priority order: system → user. Settings already present in
-   * the repo's own config take precedence over inherited values.
-   */
-  private void configureGitFromSystemSettings(org.eclipse.jgit.lib.Repository repo) {
-    try {
-      org.eclipse.jgit.lib.StoredConfig repoConfig = repo.getConfig();
-
-      // Collect key-value pairs from external configs in priority order
-      // (system config overrides user config)
-      java.util.Map<String, String> externalSettings = new java.util.LinkedHashMap<>();
-
-      // 1. Try user-level config first (lower priority, added first)
-      loadGitConfigSetting(
-          System.getProperty("user.home") + File.separator + ".gitconfig", externalSettings);
-
-      // 2. Try system-level config (higher priority, overwrites user settings)
-      String programData = System.getenv("PROGRAMDATA");
-      if (programData != null && !programData.isEmpty()) {
-        loadGitConfigSetting(
-            programData + File.separator + "Git" + File.separator + "config", externalSettings);
-      }
-      String programFiles = System.getenv("PROGRAMFILES");
-      if (programFiles != null && !programFiles.isEmpty()) {
-        loadGitConfigSetting(
-            programFiles
-                + File.separator
-                + "Git"
-                + File.separator
-                + "etc"
-                + File.separator
-                + "gitconfig",
-            externalSettings);
-      }
-
-      // 3. Also try JGit SystemReader (may find configs we missed)
-      try {
-        org.eclipse.jgit.util.SystemReader sr = org.eclipse.jgit.util.SystemReader.getInstance();
-        org.eclipse.jgit.lib.Config sysCfg = sr.openSystemConfig(null, null);
-        if (sysCfg != null) {
-          applySetting(externalSettings, sysCfg, "autocrlf");
-          applySetting(externalSettings, sysCfg, "fileMode");
-          applySetting(externalSettings, sysCfg, "ignoreCase");
-        }
-        org.eclipse.jgit.lib.Config userCfg = sr.openUserConfig(null, null);
-        if (userCfg != null) {
-          // User config has lower priority — only set if not already present from system
-          if (!externalSettings.containsKey("autocrlf")) {
-            applySetting(externalSettings, userCfg, "autocrlf");
-          }
-          if (!externalSettings.containsKey("fileMode")) {
-            applySetting(externalSettings, userCfg, "fileMode");
-          }
-          if (!externalSettings.containsKey("ignoreCase")) {
-            applySetting(externalSettings, userCfg, "ignoreCase");
-          }
-        }
-      } catch (Exception e) {
-        log.info("JGit SystemReader fallback: {}", e.getMessage());
-      }
-
-      if (externalSettings.isEmpty()) {
-        log.warn("No external git config found — JGit may report false positives on Windows");
-      }
-
-      // Apply settings to repo config (only if not already set in repo's own config)
-      int applied = 0;
-      for (java.util.Map.Entry<String, String> entry : externalSettings.entrySet()) {
-        String key = entry.getKey();
-        String value = entry.getValue();
-        String existing = repoConfig.getString("core", null, key);
-        if (existing == null) {
-          repoConfig.setString("core", null, key, value);
-          log.info("Applied core.{}={} from external git config", key, value);
-          applied++;
-        }
-      }
-
-      // macOS fix: command-line git sets core.fileMode=false by default because APFS
-      // does not reliably track Unix permission bits. JGit does not replicate this
-      // behaviour, so repos cloned by JGit on macOS may have core.fileMode=true,
-      // causing chmod-only changes (e.g. 0755→0644) to appear as "uncommitted changes".
-      // Force core.fileMode=false on macOS when no explicit fileMode was found in any
-      // external config, and also override a repo-level true value.
-      boolean isMacOs =
-          System.getProperty("os.name", "").toLowerCase().contains("mac")
-              || System.getProperty("os.name", "").toLowerCase().contains("darwin");
-      if (isMacOs && !externalSettings.containsKey("filemode")) {
-        String currentFileMode = repoConfig.getString("core", null, "filemode");
-        if (currentFileMode == null || !"false".equalsIgnoreCase(currentFileMode)) {
-          repoConfig.setString("core", null, "filemode", "false");
-          log.info("macOS detected — forced core.fileMode=false to prevent false dirty detection");
-          applied++;
-        }
-      }
-
-      if (applied > 0) {
-        repoConfig.save();
-        log.info(
-            "Saved {} git config setting(s) to {}", applied, repo.getDirectory().getAbsolutePath());
-      } else {
-        log.info("Repo config already has all external settings — no changes needed");
-      }
-    } catch (Exception e) {
-      log.warn("Failed to apply system git config: {}", e.getMessage());
-    }
-  }
-
-  /** Read core.autocrlf, core.fileMode, core.ignoreCase from a git config file (simple parser). */
-  private void loadGitConfigSetting(String filePath, java.util.Map<String, String> target) {
-    File f = new File(filePath);
-    if (!f.isFile()) {
-      return;
-    }
-    try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(f))) {
-      boolean inCore = false;
-      String line;
-      while ((line = reader.readLine()) != null) {
-        line = line.trim();
-        if (line.startsWith("[")) {
-          inCore = line.toLowerCase().contains("[core]");
-          continue;
-        }
-        if (inCore && line.contains("=")) {
-          int eq = line.indexOf('=');
-          String key = line.substring(0, eq).trim().toLowerCase();
-          String value = line.substring(eq + 1).trim();
-          if ("autocrlf".equals(key) || "filemode".equals(key) || "ignorecase".equals(key)) {
-            target.put(key, value);
-            log.info("Read core.{}={} from {}", key, value, f.getAbsolutePath());
-          }
-        }
-      }
-    } catch (Exception e) {
-      log.info("Failed to parse git config {}: {}", f.getAbsolutePath(), e.getMessage());
-    }
-  }
-
-  /** Helper to extract a core setting from a JGit Config and put it into the target map. */
-  private void applySetting(
-      java.util.Map<String, String> target, org.eclipse.jgit.lib.Config cfg, String key) {
-    String value = cfg.getString("core", null, key);
-    if (value != null) {
-      target.put(key, value);
     }
   }
 }
