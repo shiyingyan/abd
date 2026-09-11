@@ -258,7 +258,8 @@ public class BuildQueueService {
               String execDirResolved = BuildService.expandPath(execDir.trim());
               String newDirResolved = BuildService.expandPath(newDir);
               if (execDirResolved.equals(newDirResolved)) {
-                String targetBranch = config.getGitBranch();
+                //                String targetBranch = config.getGitBranch();
+                String targetBranch = task.getTargetBranch();
                 if (targetBranch != null && !targetBranch.trim().isEmpty()) {
                   String currentBranch =
                       gitService.getCurrentBranch(new java.io.File(newDirResolved));
@@ -434,7 +435,7 @@ public class BuildQueueService {
     Map<String, Object> result = new HashMap<>();
     try {
       String taskId =
-          buildService.startBuild(
+          buildService.createBuildTask(
               snapshot.getId(),
               buildMode,
               username,
@@ -468,6 +469,9 @@ public class BuildQueueService {
       if (buildTask != null) {
         buildTask.setQueueTaskId(queueTask.getId());
       }
+
+      // Submit to pool AFTER queueTaskId is set, so build record always has the linkage
+      buildService.submitBuild(taskId);
 
       result.put("taskId", taskId);
       result.put("queueTaskId", queueTask.getId());
@@ -773,7 +777,7 @@ public class BuildQueueService {
       } else {
         // No conflicts, build directly in project directory
         taskId =
-            buildService.startBuild(
+            buildService.createBuildTask(
                 snapshot.getId(),
                 queueTask.getBuildMode(),
                 queueTask.getUsername(),
@@ -804,6 +808,15 @@ public class BuildQueueService {
           gitService.removeWorktree(worktreePath);
         }
         return;
+      }
+
+      // Set queueTaskId on build task BEFORE submitting to pool
+      if (worktreePath == null) {
+        BuildTask bt = buildService.getTask(taskId);
+        if (bt != null) {
+          bt.setQueueTaskId(queueTask.getId());
+        }
+        buildService.submitBuild(taskId);
       }
 
       // Poll until build completes

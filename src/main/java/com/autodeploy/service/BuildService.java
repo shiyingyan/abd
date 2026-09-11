@@ -43,8 +43,38 @@ public class BuildService {
 
   private final ConcurrentHashMap<String, BuildTask> taskMap = new ConcurrentHashMap<>();
 
-  /** Start a build for a project config. */
+  /** Start a build for a project config. Convenience wrapper: creates task and submits to pool. */
   public String startBuild(
+      Long configId,
+      String buildMode,
+      String username,
+      java.util.List<String> modulePaths,
+      java.util.List<Long> envIds,
+      Boolean autoDeploy,
+      boolean skipGitPull,
+      String selectedBranch) {
+    String taskId =
+        createBuildTask(
+            configId,
+            buildMode,
+            username,
+            modulePaths,
+            envIds,
+            autoDeploy,
+            skipGitPull,
+            selectedBranch);
+    if (taskId != null) {
+      submitBuild(taskId);
+    }
+    return taskId;
+  }
+
+  /**
+   * Create a build task and register it in taskMap, but do NOT submit to the thread pool yet.
+   * Caller must call {@link #submitBuild(String)} after setting all linkage fields (e.g.
+   * queueTaskId).
+   */
+  public String createBuildTask(
       Long configId,
       String buildMode,
       String username,
@@ -63,12 +93,10 @@ public class BuildService {
     task.setStartTime(LocalDateTime.now());
     task.setSelectedModules(modulePaths);
     task.setSelectedEnvIds(envIds);
-    // For LOCAL mode, always auto-deploy; for REMOTE, use the provided value
     task.setAutoDeploy("LOCAL".equals(buildMode) || autoDeploy == null || autoDeploy);
     task.setSkipGitPull(skipGitPull);
     task.setSelectedBranch(selectedBranch);
 
-    // Create log file
     String logFileName =
         LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
             + "_"
@@ -80,9 +108,15 @@ public class BuildService {
     task.setLogFilePath(logFilePath);
 
     taskMap.put(taskId, task);
-    poolManager.submit(() -> executeBuild(task));
-
     return taskId;
+  }
+
+  /** Submit a previously created build task to the thread pool for execution. */
+  public void submitBuild(String taskId) {
+    BuildTask task = taskMap.get(taskId);
+    if (task != null) {
+      poolManager.submit(() -> executeBuild(task));
+    }
   }
 
   /** Execute the build task (runs in thread pool). */
