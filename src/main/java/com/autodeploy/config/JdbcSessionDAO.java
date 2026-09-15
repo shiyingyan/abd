@@ -108,11 +108,6 @@ public class JdbcSessionDAO implements SessionDAO {
       log.debug("Session {} not found in DB", id);
       return null;
     }
-    if (row.getExpireAt() != null && row.getExpireAt().isBefore(LocalDateTime.now())) {
-      log.debug("Session {} expired in DB (expire_at={}), removing", id, row.getExpireAt());
-      repository.deleteById(id);
-      return null;
-    }
     try {
       byte[] data = Base64.getDecoder().decode(row.getSessionData());
       try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(data))) {
@@ -225,7 +220,8 @@ public class JdbcSessionDAO implements SessionDAO {
     long now = System.currentTimeMillis();
     Long lastWrite = lastDbWriteTime.get(id);
     if (!force && lastWrite != null && now - lastWrite < DB_WRITE_INTERVAL_MS) {
-      log.info("persistRow() session {}: THROTTLED (lastWrite={}ms ago)", id, now - lastWrite);
+      log.info("persistRow() session {}: THROTTLED, refreshing expire_at only", id);
+      refreshExpireAt(id, session);
       return;
     }
     log.info(
@@ -283,5 +279,25 @@ public class JdbcSessionDAO implements SessionDAO {
 
   private static String asString(Serializable id) {
     return id == null ? null : id.toString();
+  }
+
+  private void refreshExpireAt(String id, Session session) {
+    try {
+      Date lastAccess = session.getLastAccessTime();
+      if (lastAccess == null) return;
+      LocalDateTime lastAccessLdt =
+          LocalDateTime.ofInstant(lastAccess.toInstant(), ZoneId.systemDefault());
+      long timeoutMs = session.getTimeout();
+      long expireAtMs = lastAccess.getTime() + (timeoutMs > 0 ? timeoutMs : 24L * 60 * 60 * 1000);
+      LocalDateTime expireAt =
+          LocalDateTime.ofInstant(Instant.ofEpochMilli(expireAtMs), ZoneId.systemDefault());
+      ShiroSession row = new ShiroSession();
+      row.setSessionId(id);
+      row.setLastAccessTime(lastAccessLdt);
+      row.setExpireAt(expireAt);
+      repository.updateById(row);
+    } catch (Exception e) {
+      log.warn("Failed to refresh expire_at for session {}: {}", id, e.getMessage());
+    }
   }
 }

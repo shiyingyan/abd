@@ -16,6 +16,10 @@ public class CustomRealm extends AuthorizingRealm {
   @Override
   protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token)
       throws AuthenticationException {
+    if (token instanceof SessionRestoreToken) {
+      return new SimpleAuthenticationInfo(
+          ((SessionRestoreToken) token).getPrincipals(), token.getCredentials(), getName());
+    }
     String username = (String) token.getPrincipal();
     User user = userRepository.findByUsername(username);
     if (user == null) {

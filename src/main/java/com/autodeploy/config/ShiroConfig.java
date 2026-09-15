@@ -28,6 +28,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class ShiroConfig {
 
+  private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ShiroConfig.class);
+
   @Bean
   public HashedCredentialsMatcher credentialsMatcher() {
     HashedCredentialsMatcher matcher = new HashedCredentialsMatcher();
@@ -130,7 +132,8 @@ public class ShiroConfig {
    * 1.13.0 does not restore the {@code authenticated} flag from the session after an application
    * restart, so even though the session contains valid principals, {@code
    * subject.isAuthenticated()} returns false. This custom filter compensates by re-authenticating
-   * the subject when principals are found in the session.
+   * the subject via {@code subject.login()} with a {@link SessionRestoreToken}, which properly sets
+   * both principals and the authenticated flag on the Subject.
    */
   @Bean
   public org.apache.shiro.web.filter.authc.FormAuthenticationFilter formAuthenticationFilter() {
@@ -144,8 +147,26 @@ public class ShiroConfig {
           return true;
         }
         org.apache.shiro.subject.Subject subject = getSubject(request, response);
-        if (subject.getPrincipal() != null) {
-          return true;
+        try {
+          org.apache.shiro.session.Session session = subject.getSession(false);
+          if (session != null) {
+            org.apache.shiro.subject.PrincipalCollection principals =
+                (org.apache.shiro.subject.PrincipalCollection)
+                    session.getAttribute(
+                        org.apache.shiro.subject.support.DefaultSubjectContext
+                            .PRINCIPALS_SESSION_KEY);
+            Boolean authenticated =
+                (Boolean)
+                    session.getAttribute(
+                        org.apache.shiro.subject.support.DefaultSubjectContext
+                            .AUTHENTICATED_SESSION_KEY);
+            if (principals != null && Boolean.TRUE.equals(authenticated)) {
+              subject.login(new SessionRestoreToken(principals));
+              return true;
+            }
+          }
+        } catch (Exception e) {
+          log.warn("Failed to restore session authentication: {}", e.getMessage());
         }
         return false;
       }

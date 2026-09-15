@@ -51,11 +51,12 @@ public class SessionExpiryFilter implements Filter {
         httpResp.sendRedirect(httpReq.getContextPath() + "/login");
         return;
       }
+      session.touch();
       log.debug(
-          "SessionExpiryFilter: session found id={}, authenticated={}",
+          "SessionExpiryFilter: session found id={}, authenticated={}, lastAccess={}",
           session.getId(),
-          subject.isAuthenticated());
-      session.getAttribute("id");
+          subject.isAuthenticated(),
+          session.getLastAccessTime());
     } catch (Exception e) {
       log.info("SessionExpiryFilter: exception during session lookup: {}", e.getMessage());
       try {
@@ -67,7 +68,7 @@ public class SessionExpiryFilter implements Filter {
       return;
     }
 
-    if (!subject.isAuthenticated()) {
+    if (!subject.isAuthenticated() && subject.getPrincipal() == null) {
       httpResp.sendRedirect(httpReq.getContextPath() + "/login");
       return;
     }
