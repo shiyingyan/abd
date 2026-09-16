@@ -42,6 +42,7 @@ public class BuildController {
       @RequestParam(defaultValue = "LOCAL") String buildMode,
       @RequestParam(required = false) List<String> modulePaths,
       @RequestParam(required = false) List<Long> envIds,
+      @RequestParam(required = false) List<Long> serverIds,
       @RequestParam(required = false) String autoDeploy,
       @RequestParam(required = false) String selectedBranch,
       @RequestParam(required = false) String skipGitPull,
@@ -52,7 +53,15 @@ public class BuildController {
 
     Map<String, Object> result =
         buildQueueService.submitTask(
-            configId, buildMode, username, modulePaths, envIds, auto, selectedBranch, skipPull);
+            configId,
+            buildMode,
+            username,
+            modulePaths,
+            envIds,
+            serverIds,
+            auto,
+            selectedBranch,
+            skipPull);
 
     if (result.containsKey("error")) {
       model.addAttribute("error", result.get("error"));
@@ -118,9 +127,9 @@ public class BuildController {
   public Map<String, Object> checkDuplicate(
       @RequestParam Long configId,
       @RequestParam(required = false) String selectedBranch,
-      @RequestParam(required = false) List<Long> envIds) {
+      @RequestParam(required = false) List<Long> serverIds) {
     String username = (String) SecurityUtils.getSubject().getPrincipal();
-    String deployServersKey = buildQueueService.resolveDeployServersKey(configId, envIds);
+    String deployServersKey = buildQueueService.resolveDeployServersKeyFromServerIds(serverIds);
     com.autodeploy.model.ProjectConfig snapshot = configService.getSnapshot(configId);
     String strategy = "direct";
     if (snapshot != null) {

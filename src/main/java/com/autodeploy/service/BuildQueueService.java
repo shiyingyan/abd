@@ -74,6 +74,7 @@ public class BuildQueueService {
       String username,
       List<String> modulePaths,
       List<Long> envIds,
+      List<Long> serverIds,
       Boolean autoDeploy,
       String selectedBranch,
       boolean skipGitPull) {
@@ -111,8 +112,8 @@ public class BuildQueueService {
       }
     }
 
-    // Resolve deploy server/env IDs for comparison
-    String deployServersKey = resolveDeployServersKey(configId, envIds);
+    // Resolve deploy server key directly from selected server IDs
+    String deployServersKey = resolveDeployServersKeyFromServerIds(serverIds);
     String deployEnvsKey = resolveDeployEnvsKey(envIds);
 
     // skipGitPull → build directly in project directory, no git pull, no queue logic
@@ -123,6 +124,7 @@ public class BuildQueueService {
           username,
           modulePaths,
           envIds,
+          serverIds,
           autoDeploy,
           selectedBranch,
           deployServersKey,
@@ -141,6 +143,7 @@ public class BuildQueueService {
             username,
             modulePaths,
             envIds,
+            serverIds,
             autoDeploy,
             selectedBranch,
             deployServersKey);
@@ -151,6 +154,7 @@ public class BuildQueueService {
             username,
             modulePaths,
             envIds,
+            serverIds,
             autoDeploy,
             selectedBranch,
             deployServersKey);
@@ -161,6 +165,7 @@ public class BuildQueueService {
             username,
             modulePaths,
             envIds,
+            serverIds,
             autoDeploy,
             selectedBranch,
             deployServersKey,
@@ -170,9 +175,9 @@ public class BuildQueueService {
   }
 
   /** Check if a duplicate task exists (same user, project, branch, servers, environments). */
-  public boolean isDuplicate(String username, Long configId, String branch, List<Long> envIds) {
-    String deployServersKey = resolveDeployServersKey(configId, envIds);
-    String deployEnvsKey = resolveDeployEnvsKey(envIds);
+  public boolean isDuplicate(String username, Long configId, String branch, List<Long> serverIds) {
+    String deployServersKey = resolveDeployServersKeyFromServerIds(serverIds);
+    String deployEnvsKey = "";
     return checkDuplicate(username, configId, branch, deployServersKey, deployEnvsKey);
   }
 
@@ -300,6 +305,15 @@ public class BuildQueueService {
     return serverIds.stream().map(String::valueOf).collect(Collectors.joining(","));
   }
 
+  public String resolveDeployServersKeyFromServerIds(List<Long> serverIds) {
+    if (serverIds == null || serverIds.isEmpty()) {
+      return "";
+    }
+    List<Long> sorted = new ArrayList<>(serverIds);
+    sorted.sort(Long::compareTo);
+    return sorted.stream().map(String::valueOf).collect(Collectors.joining(","));
+  }
+
   private String resolveDeployEnvsKey(List<Long> envIds) {
     if (envIds == null || envIds.isEmpty()) {
       return "";
@@ -358,6 +372,7 @@ public class BuildQueueService {
       String username,
       List<String> modulePaths,
       List<Long> envIds,
+      List<Long> serverIds,
       Boolean autoDeploy,
       String selectedBranch,
       String deployServersKey) {
@@ -387,6 +402,7 @@ public class BuildQueueService {
               username,
               modulePaths,
               envIds,
+              serverIds,
               autoDeploy,
               selectedBranch,
               worktreePath,
@@ -427,6 +443,7 @@ public class BuildQueueService {
       String username,
       List<String> modulePaths,
       List<Long> envIds,
+      List<Long> serverIds,
       Boolean autoDeploy,
       String selectedBranch,
       String deployServersKey,
@@ -441,6 +458,7 @@ public class BuildQueueService {
               username,
               modulePaths,
               envIds,
+              serverIds,
               autoDeploy,
               skipGitPull,
               selectedBranch);
@@ -565,6 +583,7 @@ public class BuildQueueService {
       String username,
       List<String> modulePaths,
       List<Long> envIds,
+      List<Long> serverIds,
       Boolean autoDeploy,
       String selectedBranch,
       String deployServersKey) {
@@ -742,6 +761,7 @@ public class BuildQueueService {
 
       List<String> modules = parseList(queueTask.getSelectedModules());
       List<Long> envIds = parseLongList(queueTask.getDeployEnvironments());
+      List<Long> serverIds = parseLongList(queueTask.getDeployServers());
 
       // Dynamically decide build strategy at dequeue time (conditions may have changed)
       String strategy =
@@ -770,6 +790,7 @@ public class BuildQueueService {
                 queueTask.getUsername(),
                 modules,
                 envIds,
+                serverIds,
                 queueTask.getAutoDeploy(),
                 queueTask.getTargetBranch(),
                 worktreePath,
@@ -783,6 +804,7 @@ public class BuildQueueService {
                 queueTask.getUsername(),
                 modules,
                 envIds,
+                serverIds,
                 queueTask.getAutoDeploy(),
                 false,
                 queueTask.getTargetBranch());

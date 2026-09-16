@@ -33,13 +33,13 @@ public class DeployService {
   private String buildsDir;
 
   /**
-   * Deploy build artifacts to selected environments' servers. Supports multi-module projects and
-   * environment filtering.
+   * Deploy build artifacts to selected servers. Supports multi-module projects and server
+   * filtering.
    *
    * @param config project config
    * @param workDir build working directory (repo root or buildWorkDir)
    * @param modulePaths selected module paths (null/empty = all modules)
-   * @param envIds selected environment IDs (null/empty = all environments)
+   * @param serverIds selected server IDs (null/empty = all servers)
    * @param logConsumer log output consumer
    * @return true if all deployments succeeded
    */
@@ -47,7 +47,7 @@ public class DeployService {
       ProjectConfig config,
       String workDir,
       List<String> modulePaths,
-      List<Long> envIds,
+      List<Long> serverIds,
       Consumer<String> logConsumer) {
     try {
       // Step 1: Resolve module list
@@ -95,10 +95,10 @@ public class DeployService {
         return false;
       }
 
-      // Filter by envIds if specified
-      if (envIds != null && !envIds.isEmpty()) {
-        associations.removeIf(a -> !envIds.contains(a.getEnvironmentId()));
-        logConsumer.accept("按环境筛选后剩余 " + associations.size() + " 个服务器关联");
+      // Filter by serverIds if specified
+      if (serverIds != null && !serverIds.isEmpty()) {
+        associations.removeIf(a -> !serverIds.contains(a.getServerId()));
+        logConsumer.accept("按服务器筛选后剩余 " + associations.size() + " 个服务器关联");
       }
 
       // Step 4: Deploy to each server

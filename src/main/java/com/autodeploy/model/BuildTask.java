@@ -21,6 +21,7 @@ public class BuildTask {
   // Module and environment selection
   private List<String> selectedModules;
   private List<Long> selectedEnvIds;
+  private List<Long> selectedServerIds;
   private Boolean autoDeploy;
   private String selectedBranch;
 
@@ -200,6 +201,14 @@ public class BuildTask {
 
   public void setSelectedEnvIds(List<Long> selectedEnvIds) {
     this.selectedEnvIds = selectedEnvIds;
+  }
+
+  public List<Long> getSelectedServerIds() {
+    return selectedServerIds;
+  }
+
+  public void setSelectedServerIds(List<Long> selectedServerIds) {
+    this.selectedServerIds = selectedServerIds;
   }
 
   public Boolean getAutoDeploy() {

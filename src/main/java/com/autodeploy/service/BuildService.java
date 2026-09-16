@@ -50,6 +50,7 @@ public class BuildService {
       String username,
       java.util.List<String> modulePaths,
       java.util.List<Long> envIds,
+      java.util.List<Long> serverIds,
       Boolean autoDeploy,
       boolean skipGitPull,
       String selectedBranch) {
@@ -60,6 +61,7 @@ public class BuildService {
             username,
             modulePaths,
             envIds,
+            serverIds,
             autoDeploy,
             skipGitPull,
             selectedBranch);
@@ -80,6 +82,7 @@ public class BuildService {
       String username,
       java.util.List<String> modulePaths,
       java.util.List<Long> envIds,
+      java.util.List<Long> serverIds,
       Boolean autoDeploy,
       boolean skipGitPull,
       String selectedBranch) {
@@ -93,6 +96,7 @@ public class BuildService {
     task.setStartTime(LocalDateTime.now());
     task.setSelectedModules(modulePaths);
     task.setSelectedEnvIds(envIds);
+    task.setSelectedServerIds(serverIds);
     task.setAutoDeploy("LOCAL".equals(buildMode) || autoDeploy == null || autoDeploy);
     task.setSkipGitPull(skipGitPull);
     task.setSelectedBranch(selectedBranch);
@@ -436,7 +440,7 @@ public class BuildService {
                   config,
                   workDir.getAbsolutePath(),
                   task.getSelectedModules(),
-                  task.getSelectedEnvIds(),
+                  task.getSelectedServerIds(),
                   line -> logLine(task, logWriter, line));
           if (deployOk) {
             if (!hasRestart) {
@@ -507,6 +511,7 @@ public class BuildService {
       String username,
       java.util.List<String> modulePaths,
       java.util.List<Long> envIds,
+      java.util.List<Long> serverIds,
       Boolean autoDeploy,
       String selectedBranch,
       String worktreePath,
@@ -516,6 +521,7 @@ public class BuildService {
     task.setStartTime(LocalDateTime.now());
     task.setSelectedModules(modulePaths);
     task.setSelectedEnvIds(envIds);
+    task.setSelectedServerIds(serverIds);
     task.setAutoDeploy("LOCAL".equals(buildMode) || autoDeploy == null || autoDeploy);
     task.setSelectedBranch(selectedBranch);
     task.setQueueTaskId(queueTaskId);
@@ -631,7 +637,7 @@ public class BuildService {
                   config,
                   workDir.getAbsolutePath(),
                   task.getSelectedModules(),
-                  task.getSelectedEnvIds(),
+                  task.getSelectedServerIds(),
                   line -> logLine(task, logWriter, line));
           if (deployOk) {
             if (!hasRestart) {

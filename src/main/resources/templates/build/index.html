@@ -59,9 +59,9 @@
                             </div>
                         </div>
 
-                        <!-- Environment selection -->
+                        <!-- Environment and server selection -->
                         <div class="mt-3" id="envSection" style="display:none;">
-                            <label class="form-label">部署环境 <small class="text-muted">(多选，默认选中第一个)</small></label>
+                            <label class="form-label">部署环境/服务器 <small class="text-muted">(按环境分组，可选择指定服务器，默认全选)</small></label>
                             <div id="envList" class="border rounded p-2" style="background-color:#f8f9fa;">
                                 <span class="text-muted">请先选择项目</span>
                             </div>
@@ -295,32 +295,65 @@
         list.html('<span class="text-muted">加载中...</span>');
 
         $.get('/api/config/' + selectedConfigId + '/env-servers', function(associations) {
-            // Dedupe by environmentId, keep first occurrence
-            var seen = {};
-            var envs = [];
-            associations.forEach(function(a) {
-                if (!seen[a.environmentId]) {
-                    seen[a.environmentId] = true;
-                    envs.push({
-                        id: a.environmentId,
-                        name: a.environmentName || ('环境' + a.environmentId)
-                    });
-                }
-            });
-
-            if (envs.length === 0) {
+            if (!associations || associations.length === 0) {
                 list.html('<span class="text-muted">未配置环境服务器，请先到项目配置页关联</span>');
                 return;
             }
 
+            // Group by environmentId
+            var envMap = {};
+            var envOrder = [];
+            associations.forEach(function(a) {
+                if (!envMap[a.environmentId]) {
+                    envMap[a.environmentId] = {
+                        id: a.environmentId,
+                        name: a.environmentName || ('环境' + a.environmentId),
+                        servers: []
+                    };
+                    envOrder.push(a.environmentId);
+                }
+                envMap[a.environmentId].servers.push({
+                    serverId: a.serverId,
+                    serverName: a.serverName || ('服务器' + a.serverId),
+                    serverHost: a.serverHost || '',
+                    deployEnabled: a.deployEnabled !== false,
+                    assocId: a.id
+                });
+            });
+
             var html = '';
-            envs.forEach(function(env, idx) {
-                var checked = idx === 0 ? 'checked' : '';
-                html += '<div class="form-check form-check-inline">' +
-                    '<input class="form-check-input env-checkbox" type="checkbox" name="envIds" ' +
-                    'value="' + env.id + '" ' + checked + '>' +
-                    '<label class="form-check-label">' + env.name + '</label>' +
-                    '</div>';
+            envOrder.forEach(function(envId) {
+                var env = envMap[envId];
+                // Default: only "dev" environment is checked
+                var envChecked = env.name.toLowerCase().indexOf('dev') >= 0 ? 'checked' : '';
+                html += '<div class="mb-2">';
+                html += '<div class="d-flex align-items-center mb-1">';
+                html += '<div class="form-check">';
+                html += '<input class="form-check-input env-checkbox" type="checkbox" data-env="' + envId + '" ' + envChecked + '>';
+                html += '<label class="form-check-label"><strong>' + env.name + '</strong></label>';
+                html += '</div>';
+                html += '<div class="ms-auto">';
+                html += '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 env-select-all" data-env="' + envId + '" style="font-size:0.7rem;">全选</button>';
+                html += '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 env-clear-all ms-1" data-env="' + envId + '" style="font-size:0.7rem;">清空</button>';
+                html += '</div>';
+                html += '</div>';
+                env.servers.forEach(function(s) {
+                    var checked = (s.deployEnabled && envChecked) ? 'checked' : '';
+                    var disabled = s.deployEnabled ? '' : 'disabled';
+                    html += '<div class="form-check" style="padding-left:24px;">';
+                    html += '<input class="form-check-input server-checkbox" type="checkbox" name="serverIds" ';
+                    html += 'value="' + s.serverId + '" data-env-id="' + envId + '" ' + checked + ' ' + disabled + '>';
+                    html += '<label class="form-check-label">' + s.serverName;
+                    if (s.serverHost) {
+                        html += ' <small class="text-muted">(' + s.serverHost + ')</small>';
+                    }
+                    if (!s.deployEnabled) {
+                        html += ' <span class="badge bg-secondary">部署已禁用</span>';
+                    }
+                    html += '</label>';
+                    html += '</div>';
+                });
+                html += '</div>';
             });
             list.html(html);
         }).fail(function() {
@@ -378,6 +411,23 @@
     });
     $('#clearAllModules').click(function() {
         $('.module-checkbox').prop('checked', false);
+    });
+
+    // Select/clear all servers per environment
+    $(document).on('change', '.env-checkbox', function() {
+        var envId = $(this).data('env');
+        var checked = $(this).is(':checked');
+        $('.server-checkbox[data-env-id="' + envId + '"]').not(':disabled').prop('checked', checked);
+    });
+    $(document).on('click', '.env-select-all', function() {
+        var envId = $(this).data('env');
+        $('.server-checkbox[data-env-id="' + envId + '"]').not(':disabled').prop('checked', true);
+        $('.env-checkbox[data-env="' + envId + '"]').prop('checked', true);
+    });
+    $(document).on('click', '.env-clear-all', function() {
+        var envId = $(this).data('env');
+        $('.server-checkbox[data-env-id="' + envId + '"]').not(':disabled').prop('checked', false);
+        $('.env-checkbox[data-env="' + envId + '"]').prop('checked', false);
     });
 
     function checkGitStatus() {
@@ -460,11 +510,11 @@
             return false;
         }
 
-        // Check environment selection
-        var envChecked = $('.env-checkbox:checked').length;
-        if ($('#envSection').is(':visible') && envChecked === 0) {
+        // Check server selection
+        var serverChecked = $('.server-checkbox:checked').length;
+        if ($('#envSection').is(':visible') && serverChecked === 0) {
             e.preventDefault();
-            alert('请至少选择一个部署环境');
+            alert('请至少选择一个部署服务器');
             return false;
         }
 
@@ -489,17 +539,29 @@
         var form = $(this);
         var configId = selectedConfigId;
         var branch = branchVal;
+        var serverIds = [];
         var envIds = [];
-        $('.env-checkbox:checked').each(function() {
-            envIds.push($(this).val());
+        var envIdSet = {};
+        $('.server-checkbox:checked').each(function() {
+            serverIds.push($(this).val());
+            var envId = $(this).data('env-id');
+            if (envId && !envIdSet[envId]) {
+                envIdSet[envId] = true;
+                envIds.push(envId);
+            }
         });
 
         var params = {configId: configId, selectedBranch: branch};
-        envIds.forEach(function(id, i) {
-            params['envIds[' + i + ']'] = id;
+        serverIds.forEach(function(id, i) {
+            params['serverIds[' + i + ']'] = id;
         });
 
         $.get('/api/build/check-duplicate', params, function(data) {
+            // Add hidden envIds inputs derived from checked servers
+            form.find('input[name="envIds"]').remove();
+            envIds.forEach(function(id) {
+                form.append('<input type="hidden" name="envIds" value="' + id + '">');
+            });
             if (data.mustQueue) {
                 // Must queue due to server overlap → show warning, then auto-submit to enqueue
                 $('#queueWarningSection').show();
@@ -516,6 +578,10 @@
             }
         }).fail(function() {
             // On error, proceed with submit (let backend handle)
+            form.find('input[name="envIds"]').remove();
+            envIds.forEach(function(id) {
+                form.append('<input type="hidden" name="envIds" value="' + id + '">');
+            });
             skipDuplicateCheck = true;
             form.submit();
         });
