@@ -407,7 +407,8 @@ public class GitService {
       throw new IllegalStateException("项目目录未配置，无法创建 worktree");
     }
 
-    File repoDir = new File(projectDir.trim());
+    // projectDir may be stored with a leading "~" which java.io.File cannot resolve — expand it
+    File repoDir = new File(BuildService.expandPath(projectDir.trim()));
     if (!repoDir.exists() || !new File(repoDir, ".git").exists()) {
       throw new IllegalStateException("项目 Git 仓库不存在，请先执行一次常规构建以初始化仓库");
     }

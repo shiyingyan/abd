@@ -89,7 +89,7 @@ public class BuildQueueService {
     // Check branch mismatch with uncommitted changes (Rule 0 — keep current behavior)
     String projectDir = snapshot.getProjectDir();
     if (projectDir != null && !projectDir.trim().isEmpty()) {
-      java.io.File repoDir = new java.io.File(projectDir.trim());
+      java.io.File repoDir = new java.io.File(BuildService.expandPath(projectDir.trim()));
       if (repoDir.exists() && new java.io.File(repoDir, ".git").exists()) {
         String currentBranch = gitService.getCurrentBranch(repoDir);
         if (currentBranch != null
@@ -431,6 +431,25 @@ public class BuildQueueService {
       log.error("Failed to start immediate build", e);
       if (worktreePath != null) {
         gitService.removeWorktree(worktreePath);
+      }
+      // Persist the failure so the submission stays traceable in the queue history
+      try {
+        BuildQueueTask failed =
+            createQueueTask(
+                snapshot,
+                buildMode,
+                username,
+                modulePaths,
+                envIds,
+                autoDeploy,
+                selectedBranch,
+                deployServersKey);
+        failed.setStatus(BuildQueueTask.STATUS_FAILURE);
+        failed.setErrorMessage("启动构建失败: " + e.getMessage());
+        failed.setCompletionTime(LocalDateTime.now());
+        buildQueueRepository.insert(failed);
+      } catch (Exception ex) {
+        log.error("Failed to save failure record for immediate build", ex);
       }
       result.put("error", "启动构建失败: " + e.getMessage());
     }

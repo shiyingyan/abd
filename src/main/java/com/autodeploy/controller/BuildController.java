@@ -46,7 +46,7 @@ public class BuildController {
       @RequestParam(required = false) String autoDeploy,
       @RequestParam(required = false) String selectedBranch,
       @RequestParam(required = false) String skipGitPull,
-      Model model) {
+      org.springframework.web.servlet.mvc.support.RedirectAttributes redirectAttributes) {
     String username = (String) SecurityUtils.getSubject().getPrincipal();
     boolean auto = !"false".equalsIgnoreCase(autoDeploy);
     boolean skipPull = "true".equalsIgnoreCase(skipGitPull);
@@ -64,7 +64,7 @@ public class BuildController {
             skipPull);
 
     if (result.containsKey("error")) {
-      model.addAttribute("error", result.get("error"));
+      redirectAttributes.addFlashAttribute("error", result.get("error"));
     }
     return "redirect:/build";
   }
