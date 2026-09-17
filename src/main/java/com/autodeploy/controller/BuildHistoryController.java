@@ -1,12 +1,15 @@
 package com.autodeploy.controller;
 
+import com.autodeploy.model.BuildQueueTask;
 import com.autodeploy.model.BuildRecord;
 import com.autodeploy.service.BuildHistoryService;
+import com.autodeploy.service.BuildQueueService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 public class BuildHistoryController {
 
   @Autowired private BuildHistoryService historyService;
+  @Autowired private BuildQueueService buildQueueService;
 
   private static final int PAGE_SIZE = 15;
 
@@ -66,6 +70,19 @@ public class BuildHistoryController {
     model.addAttribute("status", status);
     model.addAttribute("dateFrom", dateFrom);
     model.addAttribute("dateTo", dateTo);
+
+    // Build queueTaskId -> configId map for service log links
+    Map<Long, Long> queueTaskConfigMap = new HashMap<>();
+    for (BuildRecord r : records.getRecords()) {
+      if (r.getQueueTaskId() != null) {
+        BuildQueueTask task = buildQueueService.getTask(r.getQueueTaskId());
+        if (task != null && task.getConfigId() != null) {
+          queueTaskConfigMap.put(r.getQueueTaskId(), task.getConfigId());
+        }
+      }
+    }
+    model.addAttribute("queueTaskConfigMap", queueTaskConfigMap);
+
     return "history/index";
   }
 

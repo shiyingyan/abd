@@ -175,6 +175,8 @@ public class ConfigService {
     copy.setProjectDir(source.getProjectDir());
     copy.setInstallDir(source.getInstallDir());
     copy.setScriptDir(source.getScriptDir());
+    copy.setLogDirectory(source.getLogDirectory());
+    copy.setLogFileName(source.getLogFileName());
 
     copy.setProjectKey(generateProjectKey(copy.getProjectName(), copy.getVersion()));
     copy.setCreatedAt(LocalDateTime.now());
@@ -236,6 +238,8 @@ public class ConfigService {
     snapshot.setProjectDir(original.getProjectDir());
     snapshot.setInstallDir(original.getInstallDir());
     snapshot.setScriptDir(original.getScriptDir());
+    snapshot.setLogDirectory(original.getLogDirectory());
+    snapshot.setLogFileName(original.getLogFileName());
     snapshot.setLastModuleScanAt(original.getLastModuleScanAt());
     snapshot.setLastModuleScanMsg(original.getLastModuleScanMsg());
     return snapshot;

@@ -1,8 +1,11 @@
 package com.autodeploy.service;
 
 import java.io.ByteArrayOutputStream;
+import java.io.Closeable;
+import java.io.InputStream;
 import java.util.concurrent.TimeUnit;
 import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.channel.ChannelExec;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.scp.client.ScpClient;
 import org.apache.sshd.scp.client.ScpClientCreator;
@@ -40,6 +43,27 @@ public class SshService {
       }
       return result;
     }
+  }
+
+  /**
+   * Execute a remote command and stream stdout line-by-line. Returns a handle for lifecycle
+   * management. The caller must close the handle when done.
+   */
+  public StreamingExecHandle executeStreamingCommand(
+      String host, int port, String user, String password, String command) throws Exception {
+    log.info("SSH streaming exec on {}@{}:{} - {}", user, host, port, command);
+    ClientSession session =
+        client.connect(user, host, port).verify(30, TimeUnit.SECONDS).getSession();
+    session.addPasswordIdentity(password);
+    session.auth().verify(30, TimeUnit.SECONDS);
+
+    ChannelExec channel = session.createExecChannel(command);
+    channel.open().verify(30, TimeUnit.SECONDS);
+
+    InputStream stdout = channel.getInvertedOut();
+    InputStream stderr = channel.getInvertedErr();
+
+    return new StreamingExecHandle(session, channel, stdout, stderr);
   }
 
   /** Upload a file to a remote server via SCP. */
@@ -82,6 +106,48 @@ public class SshService {
     } catch (Exception e) {
       log.warn("SSH connection test failed to {}@{}:{} - {}", user, host, port, e.getMessage());
       return false;
+    }
+  }
+
+  /** Handle for managing a streaming SSH execution session. */
+  public static class StreamingExecHandle implements Closeable {
+    private final ClientSession session;
+    private final ChannelExec channel;
+    private final InputStream stdout;
+    private final InputStream stderr;
+
+    public StreamingExecHandle(
+        ClientSession session, ChannelExec channel, InputStream stdout, InputStream stderr) {
+      this.session = session;
+      this.channel = channel;
+      this.stdout = stdout;
+      this.stderr = stderr;
+    }
+
+    public InputStream getStdout() {
+      return stdout;
+    }
+
+    public InputStream getStderr() {
+      return stderr;
+    }
+
+    public boolean isOpen() {
+      return channel.isOpen();
+    }
+
+    @Override
+    public void close() {
+      try {
+        channel.close();
+      } catch (Exception e) {
+        // ignore
+      }
+      try {
+        session.close();
+      } catch (Exception e) {
+        // ignore
+      }
     }
   }
 }

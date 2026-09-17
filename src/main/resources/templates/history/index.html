@@ -65,6 +65,11 @@
                                 <td>
                                     <button class="btn btn-sm btn-outline-info" th:onclick="'showDetail(' + ${r.id} + ')'">详情</button>
                                     <button class="btn btn-sm btn-outline-secondary" th:onclick="'showLog(' + ${r.id} + ')'">日志</button>
+                                    <a th:if="${r.queueTaskId != null and queueTaskConfigMap[r.queueTaskId] != null}"
+                                       th:href="@{/log/{configId}(configId=${queueTaskConfigMap[r.queueTaskId]})}"
+                                       class="btn btn-sm btn-outline-success" title="服务日志">
+                                        <i class="bi bi-terminal"></i> 服务
+                                    </a>
                                 </td>
                             </tr>
                             <tr th:if="${records.isEmpty()}"><td colspan="11" class="text-center text-muted">暂无构建记录</td></tr>

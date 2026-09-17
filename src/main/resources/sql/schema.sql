@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS project_config (
     language_version VARCHAR(32),
     custom_install_dir VARCHAR(512),
     project_dir VARCHAR(512),
+    install_dir VARCHAR(512),
+    script_dir VARCHAR(512),
+    log_directory VARCHAR(512) COMMENT '日志目录',
+    log_file_name VARCHAR(256) COMMENT '日志文件名',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

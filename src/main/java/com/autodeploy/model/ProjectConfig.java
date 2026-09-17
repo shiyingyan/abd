@@ -77,6 +77,12 @@ public class ProjectConfig {
   @TableField("script_dir")
   private String scriptDir;
 
+  @TableField("log_directory")
+  private String logDirectory;
+
+  @TableField("log_file_name")
+  private String logFileName;
+
   @TableField("last_module_scan_at")
   private LocalDateTime lastModuleScanAt;
 
@@ -271,6 +277,22 @@ public class ProjectConfig {
 
   public void setScriptDir(String scriptDir) {
     this.scriptDir = scriptDir;
+  }
+
+  public String getLogDirectory() {
+    return logDirectory;
+  }
+
+  public void setLogDirectory(String logDirectory) {
+    this.logDirectory = logDirectory;
+  }
+
+  public String getLogFileName() {
+    return logFileName;
+  }
+
+  public void setLogFileName(String logFileName) {
+    this.logFileName = logFileName;
   }
 
   public LocalDateTime getLastModuleScanAt() {

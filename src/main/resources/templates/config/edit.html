@@ -163,6 +163,31 @@
                            placeholder="留空表示不需要重启"/>
                 </div>
 
+                <!-- Log Configuration Section (non-NODE projects only) -->
+                <div class="mb-3" th:if="${config.languageType != 'NODE'}">
+                    <hr/>
+                    <h6>日志配置
+                        <i class="bi bi-question-circle ad-help-icon" data-bs-toggle="tooltip" data-bs-placement="right"
+                           title="配置远程服务器上的日志路径，用于实时查看服务日志"></i>
+                    </h6>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">日志目录</label>
+                            <input type="text" class="form-control" th:field="*{logDirectory}"
+                                   placeholder="绝对路径，留空默认使用项目部署目录下的 /logs"/>
+                            <div class="form-text">部署服务器上的日志目录绝对路径。留空默认使用 {项目部署目录}/logs。</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">日志文件名
+                                <small class="text-muted">（可选）</small>
+                            </label>
+                            <input type="text" class="form-control" th:field="*{logFileName}"
+                                   placeholder="app.log"/>
+                            <div class="form-text">留空时自动推断：优先使用项目目录名.log，否则回退到 info.log + error.log。</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Module Scan Section (non-NODE projects only) -->
                 <div class="mb-3" th:if="${!isNew and config.languageType != 'NODE'}">
                     <hr/>

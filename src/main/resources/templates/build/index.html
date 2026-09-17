@@ -699,6 +699,10 @@
             if (t.buildRecordId) {
                 html += '<a href="/history?recordId=' + t.buildRecordId + '" class="btn btn-sm btn-outline-info me-1">历史</a>';
             }
+            // Service log button - only show when task is completed (success or failure)
+            if ((t.status === 0 || t.status === 1) && t.configId) {
+                html += '<a href="/log/' + t.configId + '" class="btn btn-sm btn-outline-success me-1" title="服务日志"><i class="bi bi-terminal"></i> 日志</a>';
+            }
             if (t.status === 1 && t.errorMessage) {
                 html += '<span class="text-danger" style="font-size:0.75rem;max-width:200px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;" title="' + escapeHtml(t.errorMessage) + '">' + escapeHtml(t.errorMessage.length > 30 ? t.errorMessage.substring(0, 30) + '...' : t.errorMessage) + '</span>';
             }
