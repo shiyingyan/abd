@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/common :: head('实时日志 - Auto Deploy')"></head>
+<body>
+<nav th:replace="fragments/common :: navbar"></nav>
+<div class="container-fluid mt-3">
+    <div class="row">
+        <div th:replace="fragments/common :: sidebar"></div>
+        <div class="col-md-10">
+            <h4>
+                实时日志
+                <small class="text-muted" th:text="${config.projectName}"></small>
+                <small class="text-muted" th:text="'v' + ${config.version}"></small>
+            </h4>
+
+            <!-- Warning for NODE projects -->
+            <div th:if="${!hasLogConfig}" class="alert alert-warning">
+                前端 Node 项目不支持服务日志跟踪功能。
+            </div>
+
+            <!-- Server selector -->
+            <div class="mb-3" th:if="${hasLogConfig}">
+                <label class="form-label">选择服务器</label>
+                <div id="serverList"></div>
+                <div class="form-text mt-2">
+                    每服务器最多 5 个连接，全局最多 30 个。
+                </div>
+            </div>
+
+            <!-- Connection status -->
+            <div id="connStatus" class="mb-2" style="display:none;">
+                <span class="badge bg-success" id="connBadge">
+                    <i class="bi bi-link-45deg"></i> 已连接
+                </span>
+                <button id="disconnectBtn" class="btn btn-outline-secondary btn-sm ms-2"
+                        onclick="disconnect()" style="display:none;">断开</button>
+            </div>
+
+            <!-- Log area -->
+            <pre class="bg-dark text-light p-3" id="logArea"
+                 style="max-height:600px;overflow-y:auto;border-radius:0.5rem;
+                        white-space:pre-wrap;word-wrap:break-word;display:none;"></pre>
+        </div>
+    </div>
+</div>
+<th:block th:replace="fragments/common :: scripts"></th:block>
+<script th:inline="javascript">
+    var configId = /*[[${config.id}]]*/ null;
+    var associations = /*[[${associations}]]*/ [];
+    var evtSource = null;
+
+    // Render environment-grouped server buttons
+    (function() {
+        var serverList = document.getElementById('serverList');
+        if (!associations || associations.length === 0) {
+            serverList.innerHTML = '<span class="text-muted">该项目未关联任何服务器。请先到项目配置中关联服务器。</span>';
+            return;
+        }
+
+        // Group by environmentId
+        var envMap = {};
+        var envOrder = [];
+        associations.forEach(function(a) {
+            if (!envMap[a.environmentId]) {
+                envMap[a.environmentId] = {
+                    id: a.environmentId,
+                    name: a.environmentName || ('环境' + a.environmentId),
+                    servers: []
+                };
+                envOrder.push(a.environmentId);
+            }
+            envMap[a.environmentId].servers.push({
+                id: a.serverId,
+                name: a.serverName,
+                host: a.serverHost
+            });
+        });
+
+        // Render grouped servers
+        var html = '';
+        envOrder.forEach(function(envId) {
+            var env = envMap[envId];
+            html += '<div class="mb-2">';
+            html += '<span class="badge bg-secondary me-2">' + env.name + '</span>';
+            html += '<span class="d-inline-flex gap-2 flex-wrap align-middle">';
+            env.servers.forEach(function(s) {
+                html += '<button class="btn btn-outline-primary btn-sm server-btn" data-server-id="' + s.id + '">';
+                html += s.name + ' (' + s.host + ')';
+                html += '</button>';
+            });
+            html += '</span>';
+            html += '</div>';
+        });
+        serverList.innerHTML = html;
+    })();
+
+    // Same requestAnimationFrame batching pattern as build/log.html
+    var pendingLines = [];
+    var flushScheduled = false;
+    var logArea = document.getElementById('logArea');
+
+    function scheduleFlush() {
+        if (flushScheduled) return;
+        flushScheduled = true;
+        window.requestAnimationFrame(function() {
+            flushScheduled = false;
+            if (pendingLines.length === 0) return;
+            logArea.appendChild(document.createTextNode(pendingLines.join('')));
+            pendingLines = [];
+            logArea.scrollTop = logArea.scrollHeight;
+        });
+    }
+
+    // Server button click -> connect SSE
+    document.querySelectorAll('.server-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var serverId = this.dataset.serverId;
+            connect(serverId);
+            // Highlight active button
+            document.querySelectorAll('.server-btn').forEach(function(b) {
+                b.classList.remove('btn-primary');
+                b.classList.add('btn-outline-primary');
+            });
+            this.classList.remove('btn-outline-primary');
+            this.classList.add('btn-primary');
+        });
+    });
+
+    function connect(serverId) {
+        disconnect(); // close previous if any
+        logArea.style.display = '';
+        logArea.textContent = '正在连接...\n';
+        document.getElementById('connStatus').style.display = '';
+        document.getElementById('disconnectBtn').style.display = '';
+
+        evtSource = new EventSource('/api/log/sse/' + configId + '/' + serverId);
+        evtSource.onmessage = function(e) {
+            // Check for error message
+            if (e.data && e.data.indexOf('ERROR:') === 0) {
+                pendingLines.push('[错误] ' + e.data.substring(6) + '\n');
+                scheduleFlush();
+                document.getElementById('connBadge').className = 'badge bg-danger';
+                document.getElementById('connBadge').innerHTML = '<i class="bi bi-x-circle"></i> 错误';
+                evtSource.close();
+                evtSource = null;
+                return;
+            }
+            pendingLines.push(e.data + '\n');
+            scheduleFlush();
+        };
+        evtSource.onerror = function() {
+            pendingLines.push('[连接已断开]\n');
+            scheduleFlush();
+            document.getElementById('connBadge').className = 'badge bg-danger';
+            document.getElementById('connBadge').innerHTML = '<i class="bi bi-x-circle"></i> 已断开';
+            evtSource.close();
+            evtSource = null;
+        };
+        evtSource.onopen = function() {
+            document.getElementById('connBadge').className = 'badge bg-success';
+            document.getElementById('connBadge').innerHTML = '<i class="bi bi-link-45deg"></i> 已连接';
+        };
+    }
+
+    function disconnect() {
+        if (evtSource) {
+            evtSource.close();
+            evtSource = null;
+        }
+        document.getElementById('connStatus').style.display = 'none';
+        document.getElementById('disconnectBtn').style.display = 'none';
+    }
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', disconnect);
+</script>
+</body>
+</html>
