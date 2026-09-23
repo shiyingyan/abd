@@ -74,7 +74,15 @@ public class ModuleScanService {
       File baseDir = resolveBaseDirectory(config, scanDir);
 
       if (!baseDir.exists()) {
-        updateScanResult(projectId, "构建工作目录不存在: " + baseDir.getAbsolutePath());
+        String hint =
+            config.getProjectDir() != null && !config.getProjectDir().trim().isEmpty()
+                ? " (projectDir="
+                    + config.getProjectDir().trim()
+                    + ", buildWorkDir="
+                    + config.getBuildWorkDir()
+                    + ")"
+                : "";
+        updateScanResult(projectId, "构建工作目录不存在: " + baseDir.getAbsolutePath() + hint);
         return;
       }
 
@@ -109,11 +117,15 @@ public class ModuleScanService {
   private File resolveScanDirectory(ProjectConfig config) throws Exception {
     // If projectDir is configured and has .git, use it directly
     if (config.getProjectDir() != null && !config.getProjectDir().trim().isEmpty()) {
-      File projectDir = new File(config.getProjectDir().trim());
+      String expanded = BuildService.expandPath(config.getProjectDir());
+      File projectDir = new File(expanded);
       if (new File(projectDir, ".git").exists()) {
         log.info("Using existing project directory for scan: {}", projectDir.getAbsolutePath());
         return projectDir;
       }
+      log.warn(
+          "projectDir configured but .git not found at {}, falling back to scan clone",
+          projectDir.getAbsolutePath());
     }
 
     // Otherwise, shallow clone into scan directory
